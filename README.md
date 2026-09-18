@@ -1,5 +1,8 @@
 # NEOVIA Demand Intelligence
 
+## CI/CD Configuration
+✅ Vercel secrets configured: VERCEL_ORG_ID and VERCEL_PROJECT_ID
+
 Next.js full-stack app pro správu poptávek, obchodních příležitostí a kontaktů s integrací NIS2/nZOKB compliance.
 
 ## Technologie
