@@ -3,10 +3,10 @@
  * Scoring algoritmus: 0-100%
  */
 
-import type { demand, capacity } from "./schema";
+import type { demands, capacities } from "./schema";
 
-type Demand = typeof demand.$inferSelect;
-type Capacity = typeof capacity.$inferSelect;
+type Demand = typeof demands.$inferSelect;
+type Capacity = typeof capacities.$inferSelect;
 
 interface MatchScore {
   overall: number;
