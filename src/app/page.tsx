@@ -242,6 +242,9 @@ export default function Home() {
           <small>
             <i></i> Data se načítají z pracovního prostoru
           </small>
+          <small className="app-version">
+            v1.0.0 · {new Date().toISOString().slice(0, 10)} · NEOVIA Demand Intelligence
+          </small>
         </div>
       </aside>
       <section className="content">
