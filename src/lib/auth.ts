@@ -10,6 +10,7 @@ export const auth = betterAuth({
   database: drizzleAdapter(getDb(), {
     provider: "pg",
     schema: schema,
+    usePlural: true,
   }),
   emailAndPassword: { enabled: true },
   secret: process.env.BETTER_AUTH_SECRET || "local-development-secret-replace-before-deployment",
