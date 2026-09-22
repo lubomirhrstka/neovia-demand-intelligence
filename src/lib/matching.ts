@@ -82,6 +82,65 @@ export function stringSimilarity(a: string, b: string): number {
   return Math.max(0, 1 - dist / maxLen);
 }
 
+const COMPANY_LEGAL_SUFFIXES = [
+  "s.r.o.", "s.r.o", "spol. s r.o.", "spol s r o", "a.s.", "a.s", "akciová společnost",
+  "k.s.", "v.o.s.", "se", "z.s.", "z.ú.", "o.p.s.", "družstvo", "s.p.", "p.o.",
+  "gmbh", "ag", "inc.", "inc", "ltd.", "ltd", "llc", "corp.", "corp", "co.", "s.a.",
+];
+/**
+ * Normalizuje název firmy pro porovnání duplicit:
+ * odstraní právní formy, diakritiku, interpunkci a přebytečné mezery.
+ */
+export function normalizeCompanyName(name: string): string {
+  let result = (name || "").toLowerCase().trim();
+  result = result.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  for (const suffix of COMPANY_LEGAL_SUFFIXES) {
+    const pattern = new RegExp(`(^|\\s)${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`, "gi");
+    result = result.replace(pattern, " ");
+  }
+  result = result.replace(/[.,'"()\-]/g, " ").replace(/\s+/g, " ").trim();
+  return result;
+}
+export const companyNormalize = (value: unknown) => String(value || "").trim().replace(/\s+/g, " ");
+export const companyNormalizeText = (value: unknown) =>
+  companyNormalize(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+/** Zredukuje název firmy na porovnatelný "klíč" - bez právní formy a bez interpunkce. */
+export const companyKey = (value: string) =>
+  companyNormalizeText(value)
+    .replace(/\bspol\.?\s*s\.?\s*r\.?\s*o\.?\b/g, " ")
+    .replace(/\bs\.?\s*r\.?\s*o\.?\b/g, " ")
+    .replace(/\ba\.?\s*s\.?\b/g, " ")
+    .replace(/\bk\.?\s*s\.?\b/g, " ")
+    .replace(/\bv\.?\s*o\.?\s*s\.?\b/g, " ")
+    .replace(/\b(ltd|limited|inc|corp|corporation|gmbh|llc)\b/g, " ")
+    .replace(/[^a-z0-9]/g, "");
+export const companyDomainFrom = (value: string) => {
+  const text = companyNormalize(value).toLowerCase();
+  const url = text.match(/https?:\/\/([^/\s]+)/)?.[1] || text.match(/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/)?.[1] || "";
+  return url.replace(/^www\./, "");
+};
+/** Poznají, jestli dvě firmy jsou pravděpodobně stejný subjekt (shodný normalizovaný název, IČO, nebo doména webu). */
+export function sameCompanyIdentity(
+  left: { name: string; ico?: string | null; website?: string | null },
+  right: { name: string; ico?: string | null; website?: string | null },
+) {
+  const leftKey = companyKey(left.name);
+  const rightKey = companyKey(right.name);
+  const sameName =
+    leftKey.length > 3 &&
+    rightKey.length > 3 &&
+    (leftKey === rightKey ||
+      (Math.min(leftKey.length, rightKey.length) >= 5 && (leftKey.includes(rightKey) || rightKey.includes(leftKey))));
+  const sameIco = Boolean(left.ico && right.ico && companyNormalize(left.ico) === companyNormalize(right.ico));
+  const leftDomain = companyDomainFrom(left.website || "");
+  const rightDomain = companyDomainFrom(right.website || "");
+  const sameDomain = Boolean(leftDomain && rightDomain && leftDomain === rightDomain);
+  return { same: sameName || sameIco || sameDomain, sameName, sameIco, sameDomain };
+}
+
 /**
  * Matchuje roli demands s rolí capacity
  * Vrací score 0-100

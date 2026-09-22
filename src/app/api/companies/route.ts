@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { sameCompanyIdentity } from "@/lib/matching";
 import { auditLog, companies, contacts, demands, opportunities } from "@/lib/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -9,37 +10,6 @@ async function currentUser() {
   const session = await auth.api.getSession({ headers: await headers() });
   return session?.user;
 }
-const normalize = (value: unknown) => String(value || "").trim().replace(/\s+/g, " ");
-const normalizeText = (value: unknown) =>
-  normalize(value)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-const companyKey = (value: string) =>
-  normalizeText(value)
-    .replace(/\bspol\.?\s*s\.?\s*r\.?\s*o\.?\b/g, " ")
-    .replace(/\bs\.?\s*r\.?\s*o\.?\b/g, " ")
-    .replace(/\ba\.?\s*s\.?\b/g, " ")
-    .replace(/\bk\.?\s*s\.?\b/g, " ")
-    .replace(/\bv\.?\s*o\.?\s*s\.?\b/g, " ")
-    .replace(/\b(ltd|limited|inc|corp|corporation|gmbh|llc)\b/g, " ")
-    .replace(/[^a-z0-9]/g, "");
-const sameCompanyIdentity = (left: { name: string; ico?: string | null; website?: string | null }, right: { name: string; ico?: string | null; website?: string | null }) => {
-  const leftKey = companyKey(left.name);
-  const rightKey = companyKey(right.name);
-  const sameName = leftKey.length > 3 && rightKey.length > 3 && (leftKey === rightKey || (Math.min(leftKey.length, rightKey.length) >= 5 && (leftKey.includes(rightKey) || rightKey.includes(leftKey))));
-  const sameIco = Boolean(left.ico && right.ico && normalize(left.ico) === normalize(right.ico));
-  const leftDomain = domainFrom(left.website || "");
-  const rightDomain = domainFrom(right.website || "");
-  const sameDomain = Boolean(leftDomain && rightDomain && leftDomain === rightDomain);
-  return sameName || sameIco || sameDomain;
-};
-const domainFrom = (value: string) => {
-  const text = normalize(value).toLowerCase();
-  const url = text.match(/https?:\/\/([^/\s]+)/)?.[1] || text.match(/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/)?.[1] || "";
-  return url.replace(/^www\./, "");
-};
-
 export async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
@@ -87,7 +57,7 @@ export async function POST(request: Request) {
       name: body.name.trim(),
       ico: body.ico,
       website: body.website,
-    });
+    }).same;
   });
   if (existing) return NextResponse.json({ error: `Možná duplicita firmy: ${existing.name}. Otevřete existující kartu a doplňte ji.` }, { status: 409 });
   const [created] = await db.insert(companies).values({
@@ -126,7 +96,7 @@ export async function PATCH(request: Request) {
       name: body.name.trim(),
       ico: body.ico,
       website: body.website,
-    });
+    }).same;
   });
   if (duplicate) return NextResponse.json({ error: `Možná duplicita firmy: ${duplicate.name}.` }, { status: 409 });
   const [updated] = await db.update(companies).set({

@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { sameCompanyIdentity } from "@/lib/matching";
 import { auditLog, companies, contactDuplicates, contacts } from "@/lib/schema";
 import { and, desc, eq, or, type SQL } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -8,6 +9,29 @@ import { NextResponse } from "next/server";
 async function currentUser() {
   const session = await auth.api.getSession({ headers: await headers() });
   return session?.user;
+}
+
+function normalizeEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizePhone(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+async function findOrCreateCompany(db: ReturnType<typeof getDb>, userId: string, body: { company: string; source?: string }) {
+  const sourceTag = body.source || "Ručně";
+  const existingCompanies = await db.select().from(companies).where(eq(companies.ownerId, userId));
+  const existingCompany = existingCompanies.find((company) =>
+    sameCompanyIdentity(company, { name: body.company.trim() }).same,
+  );
+  const company =
+    existingCompany ||
+    (await db.insert(companies).values({ name: body.company.trim(), source: sourceTag, ownerId: userId }).returning())[0];
+  if (existingCompany && !existingCompany.source) {
+    await db.update(companies).set({ source: sourceTag, updatedAt: new Date() }).where(eq(companies.id, existingCompany.id));
+  }
+  return company;
 }
 
 export async function GET() {
@@ -24,8 +48,8 @@ export async function POST(request: Request) {
   if (!body.firstName || !body.lastName || !body.company || (!body.email && !body.secondaryEmail && !body.phone && !body.secondaryPhone)) return NextResponse.json({ error: "Doplňte jméno, firmu a alespoň e-mail nebo telefon." }, { status: 400 });
   const db = getDb();
   const matchRules: SQL[] = [];
-  const emails = [body.email, body.secondaryEmail].filter(Boolean).map((email: string) => email.trim().toLowerCase());
-  const phones = [body.phone, body.secondaryPhone].filter(Boolean).map((phone: string) => phone.trim());
+  const emails = [body.email, body.secondaryEmail].filter(Boolean).map(normalizeEmail);
+  const phones = [body.phone, body.secondaryPhone].filter(Boolean).map(normalizePhone).filter(Boolean);
   emails.forEach((email: string) => matchRules.push(or(eq(contacts.email, email), eq(contacts.secondaryEmail, email))!));
   phones.forEach((phone: string) => matchRules.push(or(eq(contacts.phone, phone), eq(contacts.secondaryPhone, phone))!));
   const [duplicate] = matchRules.length ? await db.select().from(contacts).where(and(eq(contacts.ownerId, user.id), or(...matchRules))).limit(1) : [];
@@ -33,10 +57,8 @@ export async function POST(request: Request) {
     await db.insert(contactDuplicates).values({ contactId: duplicate.id, candidateId: duplicate.id, score: 100, reason: body.email && duplicate.email === body.email.trim().toLowerCase() ? "Shodný služební e-mail při ručním vložení" : "Shodný služební telefon při ručním vložení" });
     return NextResponse.json({ error: `Možná duplicita: ${duplicate.firstName} ${duplicate.lastName}. Kartu otevřete a doplňte ji místo vytváření nové.` }, { status: 409 });
   }
-  const [existingCompany] = await db.select().from(companies).where(and(eq(companies.name, body.company), eq(companies.ownerId, user.id))).limit(1);
   const sourceTag = body.source || "Ručně";
-  const company = existingCompany || (await db.insert(companies).values({ name: body.company, source: sourceTag, ownerId: user.id }).returning())[0];
-  if (existingCompany && !existingCompany.source) await db.update(companies).set({ source: sourceTag, updatedAt: new Date() }).where(eq(companies.id, existingCompany.id));
+  const company = await findOrCreateCompany(db, user.id, { company: body.company, source: sourceTag });
   const [created] = await db.insert(contacts).values({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, email: emails[0] || null, secondaryEmail: emails[1] || null, phone: phones[0] || null, secondaryPhone: phones[1] || null, source: sourceTag, companyId: company.id, ownerId: user.id }).returning();
   await db.insert(auditLog).values({ entityType: "contact", entityId: created.id, action: "created", after: created, actorId: user.id });
   return NextResponse.json({ ...created, company: company.name, companyId: company.id }, { status: 201 });
@@ -51,10 +73,10 @@ export async function PATCH(request: Request) {
   const [current] = await db.select().from(contacts).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).limit(1);
   if (!current) return NextResponse.json({ error: "Kontaktní karta nebyla nalezena." }, { status: 404 });
   const matchRules: SQL[] = [];
-  const email = body.email ? body.email.trim().toLowerCase() : null;
-  const secondaryEmail = body.secondaryEmail ? body.secondaryEmail.trim().toLowerCase() : null;
-  const phone = body.phone ? body.phone.trim() : null;
-  const secondaryPhone = body.secondaryPhone ? body.secondaryPhone.trim() : null;
+  const email = body.email ? normalizeEmail(body.email) : null;
+  const secondaryEmail = body.secondaryEmail ? normalizeEmail(body.secondaryEmail) : null;
+  const phone = body.phone ? normalizePhone(body.phone) : null;
+  const secondaryPhone = body.secondaryPhone ? normalizePhone(body.secondaryPhone) : null;
   [email, secondaryEmail].filter(Boolean).forEach((value) => matchRules.push(or(eq(contacts.email, value!), eq(contacts.secondaryEmail, value!))!));
   [phone, secondaryPhone].filter(Boolean).forEach((value) => matchRules.push(or(eq(contacts.phone, value!), eq(contacts.secondaryPhone, value!))!));
   const [duplicate] = matchRules.length ? await db.select().from(contacts).where(and(eq(contacts.ownerId, user.id), or(...matchRules))).limit(1) : [];
@@ -63,9 +85,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: `Možná duplicita: ${duplicate.firstName} ${duplicate.lastName}.` }, { status: 409 });
   }
   const sourceTag = body.source || current.source || "Ručně";
-  const [existingCompany] = await db.select().from(companies).where(and(eq(companies.name, body.company), eq(companies.ownerId, user.id))).limit(1);
-  const company = existingCompany || (await db.insert(companies).values({ name: body.company, source: sourceTag, ownerId: user.id }).returning())[0];
-  if (existingCompany && !existingCompany.source) await db.update(companies).set({ source: sourceTag, updatedAt: new Date() }).where(eq(companies.id, existingCompany.id));
+  const company = await findOrCreateCompany(db, user.id, { company: body.company, source: sourceTag });
   const [updated] = await db.update(contacts).set({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, email, secondaryEmail, phone, secondaryPhone, source: sourceTag, companyId: company.id, verified: Boolean(body.verified), updatedAt: new Date() }).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).returning();
   await db.insert(auditLog).values({ entityType: "contact", entityId: updated.id, action: "updated", before: current, after: updated, actorId: user.id });
   return NextResponse.json({ ...updated, company: company.name, companyId: company.id });
