@@ -43,6 +43,27 @@
       "when": 1789591285947,
       "tag": "0005_daily_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789936600606,
+      "tag": "0006_unknown_mockingbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789938037326,
+      "tag": "0007_red_dexter_bennett",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790016471457,
+      "tag": "0009_email_accounts",
+      "breakpoints": true
     }
   ]
 }

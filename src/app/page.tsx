@@ -24,13 +24,20 @@ import {
   SlidersHorizontal,
   Sparkles,
   Target,
+  Trash2,
   Users,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Analytics } from "@/components/analytics";
+import packageInfo from "../../package.json";
+
+const APP_VERSION = packageInfo.version;
+const APP_RELEASE_DATE = process.env.NEXT_PUBLIC_APP_RELEASE_DATE || "2026-09-21";
 
 type View =
   | "Přehled"
+  | "E-mail"
+  | "Kalendář"
   | "Poptávky"
   | "Kontakty"
   | "Pool kapacit"
@@ -41,6 +48,8 @@ type View =
   | "Nastavení";
 const views: View[] = [
   "Přehled",
+  "E-mail",
+  "Kalendář",
   "Poptávky",
   "Kontakty",
   "Pool kapacit",
@@ -52,6 +61,179 @@ const views: View[] = [
 ];
 function goTo(view: View) {
   window.location.hash = encodeURIComponent(view);
+}
+function escapeIcs(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+function formatIcsDate(value: Date) {
+  return value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function localDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function repairCzechMojibake(value: string) {
+  const replacements: Record<string, string> = {
+    "√°": "á",
+    "√Å": "Á",
+    "ƒç": "č",
+    "ƒå": "Č",
+    "ƒè": "ď",
+    "ƒé": "Ď",
+    "√©": "é",
+    "√â": "É",
+    "ƒõ": "ě",
+    "ƒö": "Ě",
+    "√≠": "í",
+    "√ç": "Í",
+    "≈à": "ň",
+    "≈á": "Ň",
+    "√≥": "ó",
+    "√ì": "Ó",
+    "≈ô": "ř",
+    "≈ò": "Ř",
+    "≈°": "š",
+    "≈†": "Š",
+    "≈•": "ť",
+    "≈§": "Ť",
+    "√∫": "ú",
+    "√ö": "Ú",
+    "≈Ø": "ů",
+    "≈Æ": "Ů",
+    "√Ω": "ý",
+    "√ù": "Ý",
+    "≈æ": "ž",
+    "≈Ω": "Ž",
+  };
+  return Object.entries(replacements).reduce(
+    (text, [broken, fixed]) => text.replaceAll(broken, fixed),
+    value,
+  );
+}
+function parseCsvRow(row: string) {
+  const cells: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index];
+    const next = row[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === ";" && !quoted) {
+      cells.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function utf16LeBlob(content: string, type: string) {
+  const bytes = new Uint8Array(content.length * 2 + 2);
+  bytes[0] = 0xff;
+  bytes[1] = 0xfe;
+  for (let index = 0; index < content.length; index += 1) {
+    const code = content.charCodeAt(index);
+    bytes[index * 2 + 2] = code & 0xff;
+    bytes[index * 2 + 3] = code >> 8;
+  }
+  return new Blob([bytes], { type });
+}
+function downloadCsv(rows: string[], filename: string) {
+  const parsedRows = rows.map((row) =>
+    parseCsvRow(row).map((cell) => repairCzechMojibake(cell)),
+  );
+  const columnCount = Math.max(1, ...parsedRows.map((row) => row.length));
+  const dataRowCount = Math.max(1, parsedRows.length);
+  const filterRange = `R3C1:R${dataRowCount + 2}C${columnCount}`;
+  const generatedAt = new Date().toLocaleString("cs-CZ");
+  const tableRows = [
+    `<tr class="export-title"><td colspan="${columnCount}">NEOVIA export, ${escapeHtml(generatedAt)}</td></tr>`,
+    `<tr class="export-filter"><td colspan="${columnCount}">Filtr a hledání: v Excelu použij šipky v hlavičce tabulky nebo zkratku Ctrl+F. AutoFilter je připravený pro celý rozsah dat.</td></tr>`,
+    ...parsedRows.map((row, rowIndex) => {
+      const tag = rowIndex === 0 ? "th" : "td";
+      return `<tr>${Array.from({ length: columnCount }, (_, cellIndex) => {
+        const cell = row[cellIndex] || "";
+        return `<${tag}>${escapeHtml(cell)}</${tag}>`;
+      }).join("")}</tr>`;
+    }),
+  ].join("");
+  const workbook = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-16" />
+<!--[if gte mso 9]><xml>
+<x:ExcelWorkbook>
+<x:ExcelWorksheets>
+<x:ExcelWorksheet>
+<x:Name>Export</x:Name>
+<x:WorksheetOptions>
+<x:Selected/>
+<x:FreezePanes/>
+<x:FrozenNoSplit/>
+<x:SplitHorizontal>3</x:SplitHorizontal>
+<x:TopRowBottomPane>3</x:TopRowBottomPane>
+<x:ActivePane>2</x:ActivePane>
+<x:AutoFilter x:Range="${filterRange}"/>
+</x:WorksheetOptions>
+</x:ExcelWorksheet>
+</x:ExcelWorksheets>
+</x:ExcelWorkbook>
+</xml><![endif]-->
+<style>
+body { font-family: Arial, sans-serif; }
+table { border-collapse: collapse; }
+th, td {
+  border: 1px solid #9fb8b7;
+  padding: 6px 8px;
+  vertical-align: top;
+  white-space: nowrap;
+  mso-number-format: "\\@";
+}
+th {
+  background: #0b7d70;
+  color: #ffffff;
+  font-weight: 700;
+}
+.export-title td {
+  background: #e6f4f1;
+  color: #173739;
+  font-weight: 700;
+  font-size: 13px;
+}
+.export-filter td {
+  background: #fff6df;
+  color: #6a5114;
+  font-weight: 700;
+}
+</style>
+</head>
+<body><table>${tableRows}</table></body></html>`;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(
+    utf16LeBlob(workbook, "application/vnd.ms-excel;charset=utf-16le"),
+  );
+  link.download = filename.replace(/\.csv$/i, ".xls");
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
 }
 type Demand = {
   id: string;
@@ -73,7 +255,9 @@ type Contact = {
   company: string;
   role: string;
   email: string;
+  secondaryEmail?: string;
   phone: string;
+  secondaryPhone?: string;
   source: string;
   state: string;
   duplicates: number;
@@ -87,25 +271,74 @@ type CompanyRecord = {
   website: string | null;
   sector: string | null;
   source: string | null;
+  priority: string | null;
+  size: string | null;
+  relationshipStatus: string | null;
+  ownerName: string | null;
+  decisionMaker: string | null;
+  nextStep: string | null;
+  nextStepDueAt: string | null;
+  note: string | null;
+  doNotContact: boolean;
   updatedAt: string;
   contactsCount: number;
   demandsCount: number;
   opportunitiesCount: number;
 };
+type ActivityRecord = {
+  id: string;
+  type: string;
+  subject: string;
+  note: string | null;
+  occurredAt: string;
+  companyId: string | null;
+  company: string | null;
+  contactId: string | null;
+  contactFirstName: string | null;
+  contactLastName: string | null;
+  opportunityId: string | null;
+  opportunityTitle: string | null;
+};
 const initialContacts: Contact[] = [];
 type TaskRecord = {
   id: string;
   title: string;
+  kind?: string | null;
   priority: number;
+  tag?: string | null;
   dueAt: string | null;
   status: string;
+  externalProvider?: string | null;
+  externalId?: string | null;
+  syncedAt?: string | null;
+  contactId?: string | null;
+  contactName?: string | null;
+  companyId?: string | null;
   opportunityId?: string | null;
   opportunityTitle?: string | null;
   company?: string | null;
 };
+type CalendarStatus = {
+  configured: boolean;
+  connected: boolean;
+  account: string;
+  oauthUrl: string | null;
+  redirectUri: string;
+  missing: string[];
+  mode: string;
+  lastSyncAt: string | null;
+};
+type CalendarEventRecord = {
+  id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  link: string;
+};
 type DashboardOpportunity = {
   id: string;
   title: string;
+  companyId?: string | null;
   company: string | null;
   stage: string;
   valueCzk: number | null;
@@ -119,8 +352,11 @@ type ContactRecord = {
   lastName: string;
   role: string | null;
   email: string | null;
+  secondaryEmail?: string | null;
   phone: string | null;
+  secondaryPhone?: string | null;
   verified: boolean;
+  companyId?: string | null;
   company: string | null;
 };
 type ImportRunRecord = {
@@ -138,6 +374,8 @@ type ImportRunRecord = {
 };
 const nav: { label: View; icon: typeof LayoutDashboard }[] = [
   { label: "Přehled", icon: LayoutDashboard },
+  { label: "E-mail", icon: Mail },
+  { label: "Kalendář", icon: CalendarDays },
   { label: "Poptávky", icon: BriefcaseBusiness },
   { label: "Kontakty", icon: Users },
   { label: "Pool kapacit", icon: Target },
@@ -153,7 +391,6 @@ export default function Home() {
     [focus, setFocus] = useState(""),
     [query, setQuery] = useState(""),
     [onlyFocus, setOnlyFocus] = useState(false),
-    [done, setDone] = useState<number[]>([]),
     [toast, setToast] = useState(""),
     [contactList, setContactList] = useState<Contact[]>(initialContacts);
   useEffect(() => {
@@ -243,7 +480,7 @@ export default function Home() {
             <i></i> Data se načítají z pracovního prostoru
           </small>
           <small className="app-version">
-            v1.0.0 · {new Date().toISOString().slice(0, 10)} · NEOVIA Demand Intelligence
+            v{APP_VERSION} · {APP_RELEASE_DATE} · NEOVIA Demand Intelligence
           </small>
         </div>
       </aside>
@@ -277,6 +514,8 @@ export default function Home() {
               {...{ focus, setFocus, onlyFocus, setOnlyFocus, filtered, note }}
             />
           )}
+          {view === "E-mail" && <EmailClient note={note} />}
+          {view === "Kalendář" && <CalendarView note={note} />}
           {view === "Poptávky" && (
             <Demands {...{ query, setQuery, filtered, note }} />
           )}
@@ -290,7 +529,7 @@ export default function Home() {
           )}{" "}
           {view === "Pool kapacit" && <Pool note={note} />}{" "}
           {view === "Pipeline" && <Pipeline note={note} />}{" "}
-          {view === "Úkoly" && <Tasks {...{ done, setDone, note }} />}
+          {view === "Úkoly" && <Tasks note={note} />}
           {view === "Zdroje" && <Sources note={note} />}{" "}
           {view === "Analýzy" && <Analytics />}
           {view === "Nastavení" && (
@@ -418,6 +657,10 @@ function AccountSettings({
   const [current, setCurrent] = useState(""),
     [next, setNext] = useState(""),
     [again, setAgain] = useState(""),
+    [mailAccount, setMailAccount] = useState(() => window.localStorage.getItem("neovia-mail-account") || email),
+    [mailSenderName, setMailSenderName] = useState(() => window.localStorage.getItem("neovia-mail-sender") || name),
+    [mailSignature, setMailSignature] = useState(() => window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA"),
+    [mailMode, setMailMode] = useState(() => window.localStorage.getItem("neovia-mail-mode") || "draft_review"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const changePassword = async (e: React.FormEvent) => {
@@ -454,6 +697,13 @@ function AccountSettings({
     await authClient.signOut();
     window.location.reload();
   };
+  const saveMailSettings = () => {
+    window.localStorage.setItem("neovia-mail-account", mailAccount);
+    window.localStorage.setItem("neovia-mail-sender", mailSenderName);
+    window.localStorage.setItem("neovia-mail-signature", mailSignature);
+    window.localStorage.setItem("neovia-mail-mode", mailMode);
+    note("E-mailové nastavení bylo uloženo v aplikaci. Skutečné Gmail API se zapne po doplnění Google OAuth přístupů.");
+  };
   return (
     <>
       <div className="title">
@@ -480,6 +730,49 @@ function AccountSettings({
             </div>
           </div>
           <p>První založený účet je správce pracovního prostoru.</p>
+        </section>
+        <section className="panel setting-card">
+          <h2>Firemní Gmail a e-mailový klient</h2>
+          <p>
+            Bezpečný režim je připravený: aplikace generuje koncept, uloží ho ke kontaktu jako komunikaci a otevře Gmail ke kontrole před odesláním.
+          </p>
+          <div className="email-status-card">
+            <span className="source-tag">PŘIPRAVENO</span>
+            <b>Gmail OAuth zatím není připojený</b>
+            <small>Po doplnění Google Client ID, Client Secret a callback URL půjde zapnout čtení inboxu, Gmail drafts a odesílání přes API.</small>
+          </div>
+          <div className="form-grid email-settings-grid">
+            <label>
+              Výchozí e-mailový účet
+              <input value={mailAccount} onChange={(e) => setMailAccount(e.target.value)} />
+            </label>
+            <label>
+              Jméno odesílatele
+              <input value={mailSenderName} onChange={(e) => setMailSenderName(e.target.value)} />
+            </label>
+            <label>
+              Režim odesílání
+              <select value={mailMode} onChange={(e) => setMailMode(e.target.value)}>
+                <option value="draft_review">Vždy vytvořit koncept ke kontrole</option>
+                <option value="batch_review">Fronta konceptů, potvrdit dávku</option>
+                <option value="api_ready">API připraveno, neodesílat bez potvrzení</option>
+              </select>
+            </label>
+            <label>
+              Podpis
+              <textarea value={mailSignature} onChange={(e) => setMailSignature(e.target.value)} />
+            </label>
+          </div>
+          <div className="email-rules">
+            <b>Bezpečnostní pravidla</b>
+            <span>Neodesílat kontaktům označeným neoslovovat.</span>
+            <span>Každý e-mail uložit jako aktivitu ke kontaktu a firmě.</span>
+            <span>Automatické odeslání pouze po ručním potvrzení.</span>
+            <span>Follow-up vždy jako úkol, ne jako skryté odeslání.</span>
+          </div>
+          <button className="primary" onClick={saveMailSettings}>
+            Uložit e-mailové nastavení
+          </button>
         </section>
         <section className="panel setting-card">
           <h2>Změnit heslo</h2>
@@ -558,6 +851,7 @@ function Title({
   button,
   note,
   onAction,
+  tools,
 }: {
   eyebrow: string;
   title: string;
@@ -565,6 +859,7 @@ function Title({
   button: string;
   note: (s: string) => void;
   onAction?: () => void;
+  tools?: React.ReactNode;
 }) {
   const action = () => {
     if (onAction) {
@@ -588,14 +883,7 @@ function Title({
       return;
     }
     if (button === "Export reportu") {
-      const csv = "Metrika;Hodnota\n";
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(
-        new Blob([csv], { type: "text/csv;charset=utf-8" }),
-      );
-      link.download = "neovia-analyza-role.csv";
-      link.click();
-      URL.revokeObjectURL(link.href);
+      downloadCsv(["Metrika;Hodnota"], "neovia-analyza-role.csv");
       note("Report byl stažen jako CSV.");
     }
   };
@@ -606,10 +894,13 @@ function Title({
         <h1>{title}</h1>
         <small>{subtitle}</small>
       </div>
-      <button className="primary" onClick={action}>
-        <Plus size={17} />
-        {button}
-      </button>
+      <div className="title-actions">
+        {tools}
+        <button className="primary" onClick={action}>
+          <Plus size={17} />
+          {button}
+        </button>
+      </div>
     </div>
   );
 }
@@ -647,6 +938,7 @@ function Header({ title, action }: { title: string; action: string }) {
     if (action === "Zobrazit vše") goTo("Poptávky");
     else if (action === "Kalendář") goTo("Úkoly");
     else if (action === "Otevřít kontakty") goTo("Kontakty");
+    else if (action === "Otevřít CRM") goTo("Kontakty");
   };
   return (
     <div className="panel-header">
@@ -703,6 +995,9 @@ function Dashboard({
     [dashboardDemands, setDashboardDemands] = useState<ImportedDemand[]>([]),
     [opportunities, setOpportunities] = useState<DashboardOpportunity[]>([]),
     [contacts, setContacts] = useState<ContactRecord[]>([]),
+    [companies, setCompanies] = useState<CompanyRecord[]>([]),
+    [activities, setActivities] = useState<ActivityRecord[]>([]),
+    [globalSearch, setGlobalSearch] = useState(""),
     [loading, setLoading] = useState(true);
   const today = new Date();
   const startOfToday = new Date(today);
@@ -728,12 +1023,16 @@ function Dashboard({
       fetch("/api/demands").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/opportunities").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/contacts").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/companies").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/activities").then((r) => (r.ok ? r.json() : [])),
     ])
-      .then(([taskData, demandData, opportunityData, contactData]) => {
+      .then(([taskData, demandData, opportunityData, contactData, companyData, activityData]) => {
         setNextTasks(taskData);
         setDashboardDemands(demandData);
         setOpportunities(opportunityData);
         setContacts(contactData);
+        setCompanies(companyData);
+        setActivities(activityData);
       })
       .catch(() => note("Přehled se nepodařilo celý načíst."))
       .finally(() => setLoading(false));
@@ -746,10 +1045,24 @@ function Dashboard({
     const imported = d.importedAt ? new Date(d.importedAt) : null;
     return imported && imported >= startOfToday && imported <= endOfToday;
   }).length;
+  const hotDemands = dashboardDemands
+    .map((d) => ({ demand: d, intel: demandIntelligence(d) }))
+    .sort((a, b) => b.intel.score - a.intel.score)
+    .slice(0, 5);
+  const missingContactDemands = dashboardDemands.filter((d) => !hasDemandContact(d)).length;
+  const cyberDemands = dashboardDemands.filter((d) => demandIntelligence(d).cyberSignals.length > 0).length;
+  const duplicateSignals = dashboardDemands.reduce((sum, demand, index) => {
+    const previous = dashboardDemands.slice(0, index);
+    return sum + (demandDuplicates(demand, previous).length ? 1 : 0);
+  }, 0);
   const openTasks = nextTasks.filter((t) => t.status !== "done");
   const todayTasks = openTasks.filter((t) => {
     const due = t.dueAt ? new Date(t.dueAt) : null;
     return due && due >= startOfToday && due <= endOfToday;
+  });
+  const overdueTasks = openTasks.filter((t) => {
+    const due = t.dueAt ? new Date(t.dueAt) : null;
+    return due && due < startOfToday;
   });
   const pipelineValue = opportunities.reduce(
     (sum, item) => sum + Number(item.valueCzk || 0),
@@ -767,6 +1080,24 @@ function Dashboard({
   const contactsToCheck = contacts.filter(
     (contact) => !contact.verified || !contact.email || !contact.phone,
   ).length;
+  const todayActivities = activities.filter((activity) => {
+    const occurred = activity.occurredAt ? new Date(activity.occurredAt) : null;
+    return occurred && occurred >= startOfToday && occurred <= endOfToday;
+  });
+  const completeDashboardTask = async (task: TaskRecord) => {
+    setNextTasks(nextTasks.map((x) => (x.id === task.id ? { ...x, status: "done" } : x)));
+    const response = await fetch("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.id, status: "done" }),
+    });
+    if (!response.ok) {
+      setNextTasks(nextTasks);
+      note("Úkol se nepodařilo dokončit.");
+      return;
+    }
+    note("Úkol byl dokončen a zmizí z otevřených kroků.");
+  };
   const monthBuckets = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
     const label = date.toLocaleDateString("cs-CZ", { month: "short" });
@@ -791,6 +1122,89 @@ function Dashboard({
       today: index === 0,
     };
   });
+  const openGlobalResult = (result: { type: string; id?: string; company?: string | null; opportunityId?: string | null }) => {
+    if (result.type === "Poptávka" && result.id) {
+      window.localStorage.setItem("neovia-open-demand", result.id);
+      goTo("Poptávky");
+      return;
+    }
+    if (result.type === "Firma" && (result.id || result.company)) {
+      window.localStorage.setItem("neovia-open-company", result.id || result.company || "");
+      goTo("Kontakty");
+      return;
+    }
+    if (result.type === "Kontakt" && result.id) {
+      window.localStorage.setItem("neovia-open-contact", result.id);
+      goTo("Kontakty");
+      return;
+    }
+    if (result.type === "Pipeline" && result.id) {
+      window.localStorage.setItem("neovia-open-opportunity", result.id);
+      goTo("Pipeline");
+      return;
+    }
+    if (result.type === "Úkol") {
+      goTo("Úkoly");
+      return;
+    }
+    if (result.type === "Aktivita") {
+      if (result.opportunityId) window.localStorage.setItem("neovia-open-opportunity", result.opportunityId);
+      goTo(result.opportunityId ? "Pipeline" : "Kontakty");
+    }
+  };
+  const globalResults = [
+    ...dashboardDemands.map((d) => ({
+      type: "Poptávka",
+      id: d.id,
+      title: d.role || d.title,
+      subtitle: `${d.company || "Firma neuvedena"} · ${d.source}`,
+      text: `${d.title} ${d.role || ""} ${d.company || ""} ${d.source} ${d.location || ""} ${d.demandText || ""} ${(d.technologies || []).join(" ")}`,
+    })),
+    ...companies.map((company) => ({
+      type: "Firma",
+      id: company.id,
+      company: company.name,
+      title: company.name,
+      subtitle: `${company.source || "Zdroj neuveden"} · ${company.contactsCount || 0} kontaktů`,
+      text: `${company.name} ${company.ico || ""} ${company.website || ""} ${company.sector || ""} ${company.source || ""} ${company.note || ""} ${company.decisionMaker || ""}`,
+    })),
+    ...contacts.map((contact) => ({
+      type: "Kontakt",
+      id: contact.id,
+      company: contact.company,
+      title: `${contact.firstName} ${contact.lastName}`,
+      subtitle: `${contact.company || "Firma neuvedena"} · ${contact.role || "Role neuvedena"}`,
+      text: `${contact.firstName} ${contact.lastName} ${contact.company || ""} ${contact.role || ""} ${contact.email || ""} ${contact.phone || ""}`,
+    })),
+    ...opportunities.map((opportunity) => ({
+      type: "Pipeline",
+      id: opportunity.id,
+      company: opportunity.company,
+      title: opportunity.title,
+      subtitle: `${opportunity.company || "Firma neuvedena"} · ${opportunity.stage} · ${opportunity.probability}%`,
+      text: `${opportunity.title} ${opportunity.company || ""} ${opportunity.stage} ${opportunity.source || ""} ${opportunity.valueCzk || ""}`,
+    })),
+    ...nextTasks.map((task) => ({
+      type: "Úkol",
+      id: task.id,
+      company: task.company,
+      opportunityId: task.opportunityId || null,
+      title: task.title,
+      subtitle: `${task.company || "Bez firmy"} · ${task.dueAt ? new Date(task.dueAt).toLocaleString("cs-CZ") : "Bez termínu"}`,
+      text: `${task.title} ${task.company || ""} ${task.opportunityTitle || ""} ${task.status}`,
+    })),
+    ...activities.map((activity) => ({
+      type: "Aktivita",
+      id: activity.id,
+      company: activity.company,
+      opportunityId: activity.opportunityId || null,
+      title: activity.subject,
+      subtitle: `${activity.company || [activity.contactFirstName, activity.contactLastName].filter(Boolean).join(" ") || "Bez vazby"} · ${activity.type}`,
+      text: `${activity.subject} ${activity.note || ""} ${activity.company || ""} ${activity.contactFirstName || ""} ${activity.contactLastName || ""} ${activity.opportunityTitle || ""}`,
+    })),
+  ]
+    .filter((item) => !globalSearch.trim() || item.text.toLowerCase().includes(globalSearch.toLowerCase()))
+    .slice(0, 8);
   return (
     <>
       <Title
@@ -799,11 +1213,50 @@ function Dashboard({
         subtitle={
           loading
             ? "Načítám aktuální stav pracovního prostoru."
-            : `${newToday} nových poptávek dnes, ${openTasks.length} otevřených úkolů, ${contactsToCheck} kontaktů k ověření.`
+            : `${newToday} nových poptávek dnes, ${openTasks.length} otevřených úkolů, ${todayActivities.length} aktivit dnes.`
         }
         button="Importovat data"
         note={note}
+        tools={
+          <label className="global-search">
+            <Search size={16} />
+            <input
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Hledat v celé aplikaci"
+            />
+          </label>
+        }
       />
+      {globalSearch.trim() && (
+        <section className="global-results panel">
+          <div className="panel-header">
+            <h2>Výsledky hledání</h2>
+            <button onClick={() => setGlobalSearch("")}>
+              Zavřít
+              <ChevronDown size={14} />
+            </button>
+          </div>
+          {globalResults.length === 0 ? (
+            <div className="empty-state">Nic jsem v databázi nenašel.</div>
+          ) : (
+            globalResults.map((result) => (
+              <button
+                type="button"
+                key={`${result.type}-${result.id}-${result.title}`}
+                onClick={() => openGlobalResult(result)}
+              >
+                <span className="source-tag">{result.type}</span>
+                <div>
+                  <b>{result.title}</b>
+                  <small>{result.subtitle}</small>
+                </div>
+                <ArrowUpRight size={15} />
+              </button>
+            ))
+          )}
+        </section>
+      )}
       <section className="focus">
         <div className="focus-icon">
           <Target size={20} />
@@ -863,11 +1316,64 @@ function Dashboard({
         <Metric
           label="Kontakty k ověření"
           value={String(contactsToCheck)}
-          change="Doplnit e-mail nebo telefon"
-          alert
-          icon={<CircleAlert size={19} />}
+          change={`${todayActivities.length} aktivit dnes`}
+          alert={contactsToCheck > 0}
+          icon={<Phone size={19} />}
           onClick={() => goTo("Kontakty")}
         />
+      </section>
+      <section className="panel sales-radar">
+        <div className="panel-header">
+          <h2>Obchodní radar</h2>
+          <button onClick={() => goTo("Poptávky")}>
+            Kvalifikovat poptávky
+            <ArrowUpRight size={14} />
+          </button>
+        </div>
+        <div className="radar-grid">
+          <article>
+            <b>{hotDemands.filter((x) => x.intel.score >= 80).length}</b>
+            <span>horké příležitosti</span>
+            <small>skóre 80 % a více</small>
+          </article>
+          <article>
+            <b>{cyberDemands}</b>
+            <span>NIS2/kyber signály</span>
+            <small>role, štítky nebo text</small>
+          </article>
+          <article>
+            <b>{missingContactDemands}</b>
+            <span>bez kontaktu</span>
+            <small>potřebují dohledat osobu</small>
+          </article>
+          <article>
+            <b>{duplicateSignals}</b>
+            <span>možné duplicity</span>
+            <small>stejná firma a role</small>
+          </article>
+        </div>
+        <div className="radar-list">
+          {hotDemands.length === 0 ? (
+            <div className="empty-state">Radar se naplní po importu poptávek.</div>
+          ) : (
+            hotDemands.map(({ demand, intel }) => (
+              <button
+                type="button"
+                key={demand.id}
+                onClick={() => {
+                  window.localStorage.setItem("neovia-open-demand", demand.id);
+                  goTo("Poptávky");
+                }}
+              >
+                <strong>{intel.score}%</strong>
+                <span>
+                  <b>{demand.role || demand.title}</b>
+                  <small>{demand.company || "Firma neuvedena"} · {recommendedNextStep(demand)}</small>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </section>
       <div className="grid">
         <section className="panel wide">
@@ -920,6 +1426,13 @@ function Dashboard({
               </div>
             ))}
           </div>
+          {overdueTasks.length > 0 && (
+            <div className="dashboard-alert">
+              <CircleAlert size={15} />
+              <span>{overdueTasks.length} úkolů je po termínu.</span>
+              <button onClick={() => goTo("Úkoly")}>Otevřít úkoly</button>
+            </div>
+          )}
           {todayTasks.length === 0 && (
             <div className="empty-state">
               Dnes není naplánovaný žádný další krok.
@@ -930,9 +1443,11 @@ function Dashboard({
           )}
           {todayTasks.slice(0, 3).map((t, i) => (
             <div className="mini-task" key={t.id}>
-              <button onClick={() => note("Úkol označen jako dokončený.")} />
+              <button onClick={() => completeDashboardTask(t)} />
               <div>
-                <b>{t.title}</b>
+                <button className="link-action task-title-action" type="button" onClick={() => goTo("Úkoly")}>
+                  {t.title}
+                </button>
                 <small>
                   {t.dueAt
                     ? new Date(t.dueAt).toLocaleString("cs-CZ")
@@ -981,38 +1496,584 @@ function Dashboard({
           </div>
         </section>
         <section className="panel">
-          <Header title="Kvalita kontaktů" action="Otevřít kontakty" />
-          <div className="quality">
-            <div
-              className="donut"
-              style={{
-                background: `conic-gradient(#12917f 0 ${contacts.length ? Math.round(((contacts.length - contactsToCheck) / contacts.length) * 100) : 0}%, #e6eeec 0)`,
-              }}
-            >
-              <b>
-                {contacts.length
-                  ? Math.round(((contacts.length - contactsToCheck) / contacts.length) * 100)
-                  : 0}
-                <small>%</small>
-              </b>
+          <Header title="Poslední obchodní aktivity" action="Otevřít CRM" />
+          {activities.length === 0 ? (
+            <div className="empty-state">
+              Zatím není zapsaná žádná aktivita. Přidejte ji z karty firmy nebo kontaktu.
             </div>
-            <div>
-              <b>
-                {contactsToCheck === 0
-                  ? "Kontakty jsou bez otevřených kontrol"
-                  : "Kontakty čekají na doplnění"}
-              </b>
-              <small>
-                {contacts.length - contactsToCheck} z {contacts.length} kontaktů
-                má ověřený e-mail i telefon.
-              </small>
-              <button onClick={() => goTo("Kontakty")}>
-                Otevřít kontakty <ArrowUpRight size={14} />
-              </button>
-            </div>
-          </div>
+          ) : (
+            activities.slice(0, 4).map((activity) => (
+              <div className="mini-task" key={activity.id}>
+                <button onClick={() => goTo("Kontakty")} />
+                <div>
+                  <b>{activity.subject}</b>
+                  <small>
+                    {activity.company || [activity.contactFirstName, activity.contactLastName].filter(Boolean).join(" ") || "Bez vazby"} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}
+                  </small>
+                </div>
+                <span className="avatar soft">{activity.type.slice(0, 2).toUpperCase()}</span>
+              </div>
+            ))
+          )}
         </section>
       </div>
+    </>
+  );
+}
+function EmailClient({ note }: { note: (s: string) => void }) {
+  const [folder, setFolder] = useState("inbox");
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    account: string;
+    oauthUrl: string | null;
+    missing: string[];
+    mode: string;
+    redirectUri: string;
+  } | null>(null);
+  const [mailData, setMailData] = useState<{
+    connected: boolean;
+    account?: string;
+    labels: { id: string; name: string; messagesTotal?: number; messagesUnread?: number }[];
+    messages: { id: string; subject: string; from: string; fromEmail: string; date: string; snippet: string; labels: string[] }[];
+    error?: string;
+  } | null>(null);
+  const [selectedEmail, setSelectedEmail] = useState<{
+    id: string;
+    subject: string;
+    from: string;
+    fromEmail: string;
+    to: string;
+    date: string;
+    snippet: string;
+    body: string;
+    attachments?: { id: string; filename: string; mimeType: string; size: number }[];
+    labels: string[];
+  } | null>(null);
+  const [emailMatch, setEmailMatch] = useState<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string | null;
+    email: string | null;
+    phone: string | null;
+    companyId: string | null;
+    company: string | null;
+  } | null>(null);
+  const [emailDetailLoading, setEmailDetailLoading] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
+  const [composeAttachments, setComposeAttachments] = useState<Array<{ name: string; type: string; data: string }>>([]);
+  const [trackOpen, setTrackOpen] = useState(false);
+  const [localDrafts, setLocalDrafts] = useState<Array<{ to: string; subject: string; body: string; source?: string; createdAt?: string }>>([]);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [contactCandidate, setContactCandidate] = useState<{ name: string; email: string; phone: string; company: string; duplicate: boolean } | null>(null);
+  const [creatingContact, setCreatingContact] = useState(false);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    try {
+      setLocalDrafts(JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]"));
+    } catch {
+      setLocalDrafts([]);
+    }
+  }, []);
+  const countFor = (labelId: string) => mailData?.labels.find((label) => label.id === labelId)?.messagesTotal || 0;
+  const reviewItems = [
+    ...localDrafts.map((draft) => ({
+      subject: draft.subject || "Koncept bez předmětu",
+      contact: draft.to || "Příjemce neuveden",
+      company: draft.source || "Interní koncept",
+      state: "Koncept",
+    })),
+    {
+      subject: "Cold e-mail ke kontrole",
+      contact: "Vyberte kontakt v CRM",
+      company: "Koncepty vznikají z karty kontaktu nebo poptávky",
+      state: "Připraveno",
+    },
+  ];
+  const followupItems = [
+    {
+      subject: "Follow-up po 3 dnech",
+      contact: "Automatizace",
+      company: "Bude navázaná na úkoly a aktivity",
+      state: "Čeká na OAuth",
+    },
+  ];
+  const folders = [
+    { id: "inbox", label: "Doručené", count: countFor("INBOX") },
+    { id: "sent", label: "Odeslané", count: countFor("SENT") },
+    { id: "drafts", label: "Koncepty", count: countFor("DRAFT") },
+    { id: "review", label: "Ke kontrole", count: reviewItems.length },
+    { id: "followups", label: "Follow-upy", count: followupItems.length },
+    { id: "archive", label: "Archiv", count: countFor("CATEGORY_PERSONAL") },
+    { id: "trash", label: "Koš", count: countFor("TRASH") },
+  ];
+  useEffect(() => {
+    fetch("/api/email/gmail/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+  useEffect(() => {
+    if (!status?.connected || ["review", "followups"].includes(folder)) return;
+    setMailLoading(true);
+    fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`)
+      .then((response) => (response.ok ? response.json() : response.json().catch(() => null)))
+      .then((data) => setMailData(data))
+      .catch(() => setMailData((current) => current ? { ...current, error: "Poštu se nepodařilo načíst." } : null))
+      .finally(() => setMailLoading(false));
+  }, [folder, status?.connected]);
+  const selectedFolder = folders.find((item) => item.id === folder) || folders[0];
+  const sampleQueue = (folder === "followups" ? followupItems : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
+  const filteredMessages = (mailData?.messages || []).filter((item) =>
+    `${item.subject} ${item.from} ${item.fromEmail} ${item.snippet}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  const buildContactCandidate = (detail: { from: string; fromEmail: string; body: string; snippet: string }) => {
+    const text = `${detail.body || ""}\n${detail.snippet || ""}`;
+    const signaturePhone = text.match(/(?:\+420|00420)?[\s.-]?(?:\d{3}[\s.-]?){3}/)?.[0]?.trim() || "";
+    const signatureEmail = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() || detail.fromEmail || "";
+    const cleanName = detail.from
+      .replace(/\(.*?\)/g, "")
+      .replace(/prostřednictvím služby.*/i, "")
+      .trim();
+    const domain = signatureEmail.split("@")[1] || "";
+    const company = domain && !["gmail.com", "seznam.cz", "email.cz", "post.cz", "outlook.com"].includes(domain)
+      ? domain.split(".")[0].replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+      : "";
+    return {
+      name: cleanName || signatureEmail.split("@")[0] || "Nový kontakt",
+      email: signatureEmail,
+      phone: signaturePhone,
+      company,
+      duplicate: false,
+    };
+  };
+  const openEmail = async (item: { id: string; fromEmail: string }) => {
+    setEmailDetailLoading(true);
+    setSelectedEmail(null);
+    setEmailMatch(null);
+    setContactCandidate(null);
+    try {
+      const detailResponse = await fetch(`/api/email/gmail/messages/${encodeURIComponent(item.id)}`);
+      const detail = await detailResponse.json();
+      if (!detailResponse.ok) throw new Error(detail.error || "Detail e-mailu se nepodařilo načíst.");
+      setSelectedEmail(detail);
+      if (detail.fromEmail || detail.from || detail.body) {
+        const params = new URLSearchParams({
+          email: detail.fromEmail || "",
+          name: detail.from || "",
+          text: `${detail.body || ""} ${detail.snippet || ""}`.slice(0, 4000),
+        });
+        const matchResponse = await fetch(`/api/contacts/match?${params.toString()}`);
+        const matchData = await matchResponse.json();
+        setEmailMatch(matchData.match || null);
+        if (!matchData.match) setContactCandidate(buildContactCandidate(detail));
+      }
+    } catch (error) {
+      note(error instanceof Error ? error.message : "Detail e-mailu se nepodařilo načíst.");
+    } finally {
+      setEmailDetailLoading(false);
+    }
+  };
+  const saveEmailActivity = async () => {
+    if (!selectedEmail || !emailMatch) return;
+    const response = await fetch("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "email",
+        subject: `E-mail: ${selectedEmail.subject}`,
+        note: `Od: ${selectedEmail.from} <${selectedEmail.fromEmail}>\nKomu: ${selectedEmail.to || "neuvedeno"}\nDatum: ${selectedEmail.date || "neuvedeno"}\n\n${selectedEmail.body || selectedEmail.snippet}`,
+        contactId: emailMatch.id,
+        companyId: emailMatch.companyId,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      note(data.error || "E-mail se nepodařilo uložit jako aktivitu.");
+      return;
+    }
+    note("E-mail je uložený jako aktivita u kontaktu.");
+  };
+  const createContactFromEmail = async () => {
+    if (!contactCandidate) return;
+    const nameParts = contactCandidate.name.trim().split(/\s+/);
+    setCreatingContact(true);
+    try {
+      const response = await fetch("/api/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: nameParts[0] || "Kontakt",
+          lastName: nameParts.slice(1).join(" ") || "[DOPLNIT]",
+          company: contactCandidate.company || "Firma z e-mailu",
+          role: "",
+          email: contactCandidate.email,
+          phone: contactCandidate.phone,
+          source: "Gmail",
+          verified: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Kontakt se nepodařilo založit.");
+      setEmailMatch({
+        id: data.id,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role,
+        email: data.email,
+        phone: data.phone,
+        companyId: data.companyId,
+        company: data.company,
+      });
+      setContactCandidate(null);
+      note(`Kontakt ${data.firstName} ${data.lastName} byl založený. Firmu můžete hned doplnit v kartě firmy.`);
+      if (data.companyId) {
+        window.localStorage.setItem("neovia-open-company", data.companyId);
+      }
+    } catch (error) {
+      note(error instanceof Error ? error.message : "Kontakt se nepodařilo založit.");
+    } finally {
+      setCreatingContact(false);
+    }
+  };
+  const saveComposeDraft = () => {
+    const draft = { ...compose, source: "E-mail klient", createdAt: new Date().toISOString() };
+    saveLocalEmailDraft(draft);
+    setLocalDrafts((current) => [draft, ...current].slice(0, 50));
+    setComposeOpen(false);
+    setCompose({ to: "", subject: "", body: "" });
+    setComposeAttachments([]);
+    setTrackOpen(false);
+    note("Koncept e-mailu je uložený ke kontrole v aplikaci.");
+  };
+  const loadComposeAttachments = async (files: FileList | null) => {
+    if (!files) return;
+    const selected = Array.from(files).slice(0, 5);
+    const encoded = await Promise.all(selected.map((file) => new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, type: file.type || "application/octet-stream", data: String(reader.result || "") });
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    })));
+    setComposeAttachments(encoded);
+  };
+  const sendComposeEmail = async () => {
+    if (!compose.to.trim() || !compose.subject.trim() || !compose.body.trim()) {
+      note("Doplňte příjemce, předmět a text e-mailu.");
+      return;
+    }
+    if (!window.confirm(`Odeslat e-mail na ${compose.to}?`)) return;
+    setSendingEmail(true);
+    try {
+      const response = await fetch("/api/email/gmail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...compose, attachments: composeAttachments, trackOpen }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "E-mail se nepodařilo odeslat.");
+      setComposeOpen(false);
+      setCompose({ to: "", subject: "", body: "" });
+      setComposeAttachments([]);
+      setTrackOpen(false);
+      note(data.trackingId ? `E-mail byl odeslaný. Tracking ID: ${data.trackingId}` : "E-mail byl odeslaný přes připojený Gmail účet.");
+      if (status?.connected && !["review", "followups"].includes(folder)) {
+        fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => data && setMailData(data))
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      note(error instanceof Error ? error.message : "E-mail se nepodařilo odeslat.");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+  return (
+    <>
+      <Title
+        eyebrow="E-MAILOVÝ KLIENT"
+        title="Pošta a obchodní komunikace"
+        subtitle="Firemní Gmail, koncepty ke kontrole, vytěžování komunikace a vazba na kontakty, firmy a pipeline."
+        button="Nastavit Gmail"
+        note={note}
+        onAction={() => goTo("Nastavení")}
+      />
+      <section className="email-client">
+        <aside className="email-folders panel">
+          <div className="email-account">
+            <span className={status?.connected ? "source-tag" : status?.configured ? "source-tag pending-tag" : "source-tag pending-tag"}>
+              {status?.connected ? "PŘIPOJENO" : status?.configured ? "OAUTH PŘIPRAVEN" : "ČEKÁ NA OAUTH"}
+            </span>
+            <b>{status?.account || "Gmail účet"}</b>
+            <small>{status?.mode || "Načítám stav připojení..."}</small>
+          </div>
+          {folders.map((item) => (
+            <button
+              key={item.id}
+              className={folder === item.id ? "active" : ""}
+              type="button"
+              onClick={() => setFolder(item.id)}
+            >
+              <Mail size={15} />
+              <span>{item.label}</span>
+              <b>{item.count}</b>
+            </button>
+          ))}
+          <button className="primary connect-mail-button" type="button" onClick={() => {
+            if (status?.oauthUrl) window.open(status.oauthUrl, "_blank", "noopener,noreferrer");
+            else note(`Chybí OAuth údaje: ${(status?.missing || ["GOOGLE_GMAIL_CLIENT_ID", "GOOGLE_GMAIL_CLIENT_SECRET"]).join(", ")}`);
+          }}>
+            Připojit Gmail
+          </button>
+        </aside>
+        <section className="panel email-pane">
+          <div className="panel-header">
+            <h2>{selectedFolder.label}</h2>
+            <button onClick={() => goTo("Kontakty")}>
+              Otevřít kontakty
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+          <div className="toolbar email-toolbar">
+            <label>
+              <Search size={17} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Hledat v poště, kontaktech nebo konceptech" />
+            </label>
+            <button className="secondary" onClick={() => setComposeOpen(true)}>
+              Nový e-mail
+            </button>
+          </div>
+          {!status?.configured && (
+            <div className="email-setup-warning">
+              <CircleAlert size={18} />
+              <div>
+                <b>Pro skutečné čtení a odesílání pošty je potřeba doplnit Google OAuth údaje.</b>
+                <small>
+                  Nastavte proměnné GOOGLE_GMAIL_CLIENT_ID, GOOGLE_GMAIL_CLIENT_SECRET a redirect URI {status?.redirectUri || "/api/email/gmail/callback"}.
+                </small>
+              </div>
+            </div>
+          )}
+          {status?.configured && !status.connected && (
+            <div className="email-setup-warning">
+              <CircleAlert size={18} />
+              <div>
+                <b>OAuth údaje jsou nastavené, ale Gmail účet ještě není připojený.</b>
+                <small>Klikněte vlevo na Připojit Gmail a dokončete přihlášení přes Google.</small>
+              </div>
+            </div>
+          )}
+          {mailData?.error && (
+            <div className="email-setup-warning">
+              <CircleAlert size={18} />
+              <div>
+                <b>Gmail odpověděl chybou.</b>
+                <small>{mailData.error}</small>
+              </div>
+            </div>
+          )}
+          <div className="email-list">
+            {mailLoading && <div className="empty-state">Načítám zprávy z Gmailu…</div>}
+            {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && filteredMessages.map((item) => (
+              <button type="button" key={item.id} onClick={() => openEmail(item)}>
+                <span className="avatar soft">{(item.from || item.subject).slice(0, 2).toUpperCase()}</span>
+                <div>
+                  <b>{item.subject}</b>
+                  <small>{item.from} · {item.fromEmail || item.date}</small>
+                  <small>{item.snippet}</small>
+                </div>
+                <span className="source-tag">{item.labels?.includes("UNREAD") ? "Nepřečteno" : "Gmail"}</span>
+              </button>
+            ))}
+            {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && !filteredMessages.length && (
+              <div className="empty-state">V této složce není žádná zpráva odpovídající filtru.</div>
+            )}
+            {(!status?.connected || ["review", "followups"].includes(folder)) && sampleQueue.map((item) => (
+              <button type="button" key={item.subject + item.state} onClick={() => note("Po připojení Gmail API se zde otevře detail e-mailu a vazby na CRM.")}>
+                <span className="avatar soft">{item.subject.slice(0, 2).toUpperCase()}</span>
+                <div>
+                  <b>{item.subject}</b>
+                  <small>{item.contact} · {item.company}</small>
+                </div>
+                <span className="source-tag">{item.state}</span>
+              </button>
+            ))}
+          </div>
+          <div className="email-rules">
+            <b>Gmail API funkce</b>
+            <span>Načítá Doručené, Odeslané, Koncepty, Archiv a Koš po připojení účtu.</span>
+            <span>Párovat zprávy podle e-mailu na kontaktní a firemní kartu.</span>
+            <span>Vytěžovat podpis, telefon, roli, firmu, další krok a odpověď.</span>
+            <span>Odesílat pouze po ruční kontrole nebo potvrzení dávky.</span>
+          </div>
+        </section>
+      </section>
+      {(selectedEmail || emailDetailLoading) && (
+        <div className="modal-backdrop">
+          <div className="modal email-detail-modal">
+            <header>
+              <div>
+                <p>GMAIL · DETAIL ZPRÁVY</p>
+                <h2>{selectedEmail?.subject || "Načítám e-mail…"}</h2>
+              </div>
+              <button type="button" onClick={() => {
+                setSelectedEmail(null);
+                setEmailMatch(null);
+              }}>×</button>
+            </header>
+            <div className="modal-scroll email-detail-body">
+              {emailDetailLoading && <div className="empty-state">Načítám detail e-mailu…</div>}
+              {selectedEmail && (
+                <>
+                  <div className="email-detail-meta">
+                    <div>
+                      <span>Odesílatel</span>
+                      <b>{selectedEmail.from}</b>
+                      <small>{selectedEmail.fromEmail}</small>
+                    </div>
+                    <div>
+                      <span>Datum</span>
+                      <b>{selectedEmail.date || "Neuvedeno"}</b>
+                    </div>
+                    <div>
+                      <span>Vazba na CRM</span>
+                      {emailMatch ? (
+                        <>
+                          <b>{emailMatch.firstName} {emailMatch.lastName}</b>
+                          <small>{emailMatch.company || "Firma neuvedena"} · {emailMatch.role || "Role neuvedena"}</small>
+                        </>
+                      ) : (
+                        <>
+                          <b>Kontakt zatím nenalezen</b>
+                          <small>Odesílatel není v kontaktních kartách.</small>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {!emailMatch && contactCandidate && (
+                    <div className="email-crm-suggestion">
+                      <div>
+                        <span>NÁVRH KONTAKTU Z E-MAILU</span>
+                        <b>{contactCandidate.name}</b>
+                        <small>
+                          {contactCandidate.email || "E-mail nenalezen"} · {contactCandidate.phone || "Telefon nenalezen"} · {contactCandidate.company || "Firma k doplnění"}
+                        </small>
+                      </div>
+                      <div className="source-tag">Duplicita nenalezena</div>
+                    </div>
+                  )}
+                  <div className="email-body-preview">
+                    {(selectedEmail.body || selectedEmail.snippet || "E-mail nemá čitelný text.").slice(0, 6000)}
+                  </div>
+                  {Boolean(selectedEmail.attachments?.length) && (
+                    <div className="email-attachments">
+                      <b>Přílohy</b>
+                      {selectedEmail.attachments?.map((file) => (
+                        <a
+                          key={file.id}
+                          href={`/api/email/gmail/messages/${encodeURIComponent(selectedEmail.id)}/attachments/${encodeURIComponent(file.id)}?filename=${encodeURIComponent(file.filename)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {file.filename} <span>{Math.ceil((file.size || 0) / 1024)} KB</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <footer>
+              <button className="secondary" type="button" onClick={() => {
+                if (!selectedEmail) return;
+                setCompose({
+                  to: selectedEmail.fromEmail,
+                  subject: selectedEmail.subject.toLowerCase().startsWith("re:") ? selectedEmail.subject : `Re: ${selectedEmail.subject}`,
+                  body: `Dobrý den,\n\n\n\n--- Původní zpráva ---\n${selectedEmail.body || selectedEmail.snippet}`,
+                });
+                setComposeAttachments([]);
+                setTrackOpen(false);
+                setSelectedEmail(null);
+                setEmailMatch(null);
+                setComposeOpen(true);
+              }}>
+                Odpovědět
+              </button>
+              {!emailMatch && (
+                <button className="secondary" type="button" onClick={() => goTo("Kontakty")}>
+                  Otevřít kontakty
+                </button>
+              )}
+              {!emailMatch && contactCandidate && (
+                <button className="primary" type="button" disabled={creatingContact || !contactCandidate.email} onClick={createContactFromEmail}>
+                  {creatingContact ? "Zakládám…" : "Založit kontakt"}
+                </button>
+              )}
+              <button className="primary" type="button" disabled={!emailMatch || !selectedEmail} onClick={saveEmailActivity}>
+                Uložit ke kontaktu
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+      {composeOpen && (
+        <div className="modal-backdrop">
+          <div className="modal email-detail-modal">
+            <header>
+              <div>
+                <p>GMAIL · NOVÝ E-MAIL</p>
+                <h2>Nový e-mail v aplikaci</h2>
+              </div>
+              <button type="button" onClick={() => setComposeOpen(false)}>×</button>
+            </header>
+            <div className="modal-scroll">
+              <div className="form-grid">
+                <label className="span-2">
+                  Komu
+                  <input value={compose.to} onChange={(event) => setCompose((current) => ({ ...current, to: event.target.value }))} placeholder="kontakt@firma.cz" />
+                </label>
+                <label className="span-2">
+                  Předmět
+                  <input value={compose.subject} onChange={(event) => setCompose((current) => ({ ...current, subject: event.target.value }))} placeholder="Předmět e-mailu" />
+                </label>
+                <label className="span-2">
+                  Text e-mailu
+                  <textarea value={compose.body} onChange={(event) => setCompose((current) => ({ ...current, body: event.target.value }))} placeholder="Napište text e-mailu." />
+                </label>
+                <label className="span-2">
+                  Přílohy
+                  <input type="file" multiple onChange={(event) => loadComposeAttachments(event.target.files)} />
+                  {composeAttachments.length > 0 && <small>{composeAttachments.map((file) => file.name).join(", ")}</small>}
+                </label>
+                <label className="checkbox-line span-2">
+                  <input type="checkbox" checked={trackOpen} onChange={(event) => setTrackOpen(event.target.checked)} />
+                  Sledovat otevření e-mailu
+                </label>
+              </div>
+              <div className="email-setup-warning">
+                <CircleAlert size={18} />
+                <div>
+                  <b>E-mail odejde pouze po ručním potvrzení.</b>
+                  <small>Můžete ho uložit jako koncept ke kontrole, nebo rovnou odeslat přes připojený Gmail účet.</small>
+                </div>
+              </div>
+            </div>
+            <footer>
+              <button className="secondary" type="button" onClick={() => setComposeOpen(false)}>Zavřít</button>
+              <button className="primary" type="button" disabled={!compose.to.trim() || !compose.subject.trim()} onClick={saveComposeDraft}>
+                Uložit koncept
+              </button>
+              <button className="primary" type="button" disabled={sendingEmail || !compose.to.trim() || !compose.subject.trim() || !compose.body.trim()} onClick={sendComposeEmail}>
+                {sendingEmail ? "Odesílám…" : "Odeslat"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1043,9 +2104,22 @@ type ImportedDemand = {
 const DEMAND_KEYWORDS = [
   "IT Security",
   "Cybersecurity",
+  "Kybernetická bezpečnost",
+  "Kyberbezpečnost",
   "Security",
   "SOC",
   "NIS2",
+  "Zákon o kybernetické bezpečnosti",
+  "Manažer kybernetické bezpečnosti",
+  "MKB",
+  "Architekt kybernetické bezpečnosti",
+  "AKB",
+  "Auditor kybernetické bezpečnosti",
+  "Security Manager",
+  "Security Architect",
+  "Security Auditor",
+  "CISO",
+  "ISMS",
   "GDPR",
   "DORA",
   "ISO 27001",
@@ -1077,9 +2151,21 @@ const DEMAND_ROLES = [
   "IT Security Assistant",
   "IT Security Specialist",
   "Cybersecurity Specialist",
+  "Specialista kybernetické bezpečnosti",
+  "Manažer kybernetické bezpečnosti",
+  "MKB",
+  "Architekt kybernetické bezpečnosti",
+  "AKB",
+  "Auditor kybernetické bezpečnosti",
+  "CISO",
+  "ISMS Manager",
+  "Information Security Manager",
+  "Incident Response Manager",
   "Security Analyst",
   "SOC Analyst",
   "Security Architect",
+  "Security Manager",
+  "Security Auditor",
   "Java Developer",
   ".NET Developer",
   "Python Developer",
@@ -1091,11 +2177,23 @@ const DEMAND_ROLES = [
   "Project Manager",
   "Scrum Master",
 ];
+const standaloneKeywordMatches = (text: string, keyword: string) => {
+  const lower = text.toLowerCase();
+  const normalized = keyword.toLowerCase();
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (["it", "ict", "qa", "ai"].includes(normalized)) {
+    return new RegExp(`(^|[^a-zá-ž0-9])${escaped}([^a-zá-ž0-9]|$)`, "i").test(lower);
+  }
+  if (/^[a-z0-9.+#-]+$/i.test(normalized) && normalized.length <= 4) {
+    return new RegExp(`(^|[^a-zá-ž0-9])${escaped}([^a-zá-ž0-9]|$)`, "i").test(lower);
+  }
+  return lower.includes(normalized);
+};
 const keywordPool = (d: ImportedDemand) => {
   const text = `${d.title} ${d.role || ""} ${d.demandText || ""} ${(d.technologies || []).join(" ")}`.toLowerCase();
-  const found = [...(d.technologies || [])];
+  const found = [...(d.technologies || []).filter((keyword) => standaloneKeywordMatches(text, keyword))];
   for (const keyword of DEMAND_KEYWORDS) {
-    if (text.includes(keyword.toLowerCase())) found.push(keyword);
+    if (standaloneKeywordMatches(text, keyword)) found.push(keyword);
   }
   return [...new Set(found)].slice(0, 18);
 };
@@ -1103,9 +2201,106 @@ const rolePool = (d: ImportedDemand) => {
   const text = `${d.title} ${d.role || ""} ${d.demandText || ""}`.toLowerCase();
   const found = [d.role || d.title].filter(Boolean);
   for (const role of DEMAND_ROLES) {
-    if (text.includes(role.toLowerCase())) found.push(role);
+    if (standaloneKeywordMatches(text, role)) found.push(role);
   }
   return [...new Set(found)].slice(0, 8);
+};
+const hasDemandContact = (d: ImportedDemand) =>
+  Boolean(d.contactId || d.contactEmail || d.contactPhone || d.contactFirstName || d.contactLastName);
+const hasFullDemandText = (d: ImportedDemand) =>
+  Boolean(
+    d.demandText &&
+      !d.demandText.includes("Detail inzerátu nebyl ve výpisu dostupný") &&
+      d.demandText.length > 120,
+  );
+const demandIntelligence = (d: ImportedDemand) => {
+  const text = `${d.title} ${d.role || ""} ${d.demandText || ""} ${(d.technologies || []).join(" ")}`.toLowerCase();
+  const tags = keywordPool(d);
+  const cyberSignals = tags.filter((tag) =>
+    /nis2|kyber|cyber|security|isms|iso 27001|dora|ciso|soc|siem|incident/i.test(tag),
+  );
+  const b2bSignals = ["b2b", "contractor", "outsourcing", "extern", "freelance", "dodavatel", "konzultant"].filter((word) =>
+    text.includes(word),
+  );
+  let score = Number(d.relevanceScore || 0);
+  if (cyberSignals.length) score += 18;
+  if (b2bSignals.length) score += 12;
+  if (hasDemandContact(d)) score += 10;
+  if (d.company) score += 8;
+  if (hasFullDemandText(d)) score += 8;
+  if (/senior|lead|manager|architekt|architect|auditor|ciso|manažer/i.test(text)) score += 8;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const reasons = [
+    cyberSignals.length ? `obsahuje ${cyberSignals.slice(0, 4).join(", ")}` : "",
+    b2bSignals.length ? "má B2B nebo dodavatelský signál" : "",
+    hasDemandContact(d) ? "má kontaktní osobu nebo kontaktní údaj" : "chybí použitelný kontakt",
+    d.company ? "má navázanou firmu" : "chybí firemní karta",
+    hasFullDemandText(d) ? "má plné znění inzerátu" : "detail je potřeba ověřit u zdroje",
+  ].filter(Boolean);
+  const label =
+    score >= 90 ? "Ideální obchodní příležitost" :
+    score >= 70 ? "Zajímavé, ověřit" :
+    score >= 40 ? "Slabší shoda" :
+    "Spíš nerelevantní";
+  return { score, label, reasons, cyberSignals, b2bSignals };
+};
+const qualificationItems = (d: ImportedDemand) => {
+  const intelligence = demandIntelligence(d);
+  return [
+    { label: "Firma je identifikovaná", done: Boolean(d.company) },
+    { label: "Kontakt je dostupný", done: hasDemandContact(d) },
+    { label: "Plné znění je uložené", done: hasFullDemandText(d) },
+    { label: "Role je relevantní pro IT/NIS2", done: intelligence.cyberSignals.length > 0 || keywordPool(d).length > 0 },
+    { label: "Má obchodní signál B2B/outsourcing", done: intelligence.b2bSignals.length > 0 },
+  ];
+};
+const recommendedNextStep = (d: ImportedDemand) => {
+  const intelligence = demandIntelligence(d);
+  if (!hasDemandContact(d)) return "Doplnit kontakt";
+  if (!hasFullDemandText(d)) return "Ověřit detail inzerátu";
+  if (intelligence.score >= 80) return "Zavolat firmě";
+  if (intelligence.score >= 60) return "Poslat ověřovací e-mail";
+  return "Označit k ruční kvalifikaci";
+};
+const suggestedDueDate = () => {
+  const value = new Date();
+  value.setDate(value.getDate() + 1);
+  value.setHours(9, 0, 0, 0);
+  return value.toISOString();
+};
+const demandDuplicates = (d: ImportedDemand, rows: ImportedDemand[]) =>
+  rows
+    .filter((row) => row.id !== d.id)
+    .filter((row) =>
+      (d.externalId && row.externalId === d.externalId) ||
+      ((row.companyId && row.companyId === d.companyId) && (row.role || row.title).toLowerCase() === (d.role || d.title).toLowerCase()) ||
+      ((row.company || "").toLowerCase() === (d.company || "").toLowerCase() && (row.role || row.title).toLowerCase() === (d.role || d.title).toLowerCase()),
+    )
+    .slice(0, 5);
+const outreachDraft = (d: ImportedDemand) => {
+  const role = d.role || d.title;
+  const company = d.company || "vaší společnosti";
+  return `Dobrý den,\n\nzaznamenal jsem, že ${company} řeší pozici ${role}. V NEOVIA se zaměřujeme na IT outsourcing a dodávku ověřených specialistů, včetně oblastí kybernetické bezpečnosti, NIS2, ISMS a IT delivery.\n\nRád bych krátce ověřil, jestli má smysl probrat možnost rychlého doplnění kapacity nebo bodyshop spolupráce.\n\nMůžeme si zavolat na 10 minut?`;
+};
+const saveLocalEmailDraft = (draft: { to: string; subject: string; body: string; source?: string }) => {
+  const drafts = JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]") as Array<typeof draft & { createdAt: string }>;
+  window.localStorage.setItem(
+    "neovia-email-drafts",
+    JSON.stringify([{ ...draft, createdAt: new Date().toISOString() }, ...drafts].slice(0, 50)),
+  );
+};
+const contactOutreachDraft = (contact: Contact, companyDemands: ImportedDemand[] = []) => {
+  const role = companyDemands[0]?.role || companyDemands[0]?.title || contact.role || "IT kapacity";
+  return `Dobrý den,\n\nnavazuji na aktuální potřeby kolem role ${role} ve společnosti ${contact.company}. V NEOVIA pomáháme firmám rychle doplňovat ověřené IT specialisty formou outsourcingu, bodyshopu nebo cílené podpory týmu.\n\nRád bych krátce ověřil, jestli má smysl probrat možnosti spolupráce a dostupné kapacity.\n\nMůžeme si zavolat na 10 minut?`;
+};
+const contactLinkRegex =
+  /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+420|00420)?[\s.-]?(?:\d{3}[\s.-]?){3})/gi;
+const normalizePhoneHref = (value: string) => {
+  const compact = value.replace(/[^\d+]/g, "");
+  if (compact.startsWith("+")) return compact;
+  if (compact.startsWith("00420") && compact.length === 14) return `+${compact.slice(2)}`;
+  if (compact.startsWith("420") && compact.length === 12) return `+${compact}`;
+  return `+420${compact}`;
 };
 const HighlightedDemandText = ({
   text,
@@ -1117,18 +2312,45 @@ const HighlightedDemandText = ({
   const active = keywords
     .filter((x) => x.trim().length > 1)
     .sort((a, b) => b.length - a.length);
-  if (!active.length) return <p>{text}</p>;
-  const escaped = active.map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const re = new RegExp(`(${escaped.join("|")})`, "gi");
+  const escaped = active.map((x) => {
+    const keyword = x.trim();
+    const safe = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return ["it", "ict", "qa", "ai"].includes(keyword.toLowerCase()) || (/^[a-z0-9.+#-]+$/i.test(keyword) && keyword.length <= 4)
+      ? `(?<![a-zá-ž0-9])${safe}(?![a-zá-ž0-9])`
+      : safe;
+  });
+  const re = escaped.length ? new RegExp(`(${escaped.join("|")})`, "giu") : null;
+  const renderHighlighted = (value: string, prefix: string) =>
+    re
+      ? value.split(re).map((part, index) =>
+          active.some((x) => x.toLowerCase() === part.toLowerCase()) ? (
+            <mark key={`${prefix}-mark-${part}-${index}`}>{part}</mark>
+          ) : (
+            <span key={`${prefix}-text-${part}-${index}`}>{part}</span>
+          ),
+        )
+      : [<span key={`${prefix}-text`}>{value}</span>];
   return (
     <p>
-      {text.split(re).map((part, index) =>
-        active.some((x) => x.toLowerCase() === part.toLowerCase()) ? (
-          <mark key={`${part}-${index}`}>{part}</mark>
-        ) : (
-          <span key={`${part}-${index}`}>{part}</span>
-        ),
-      )}
+      {text.split(contactLinkRegex).map((part, index) => {
+        if (!part) return null;
+        if (/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(part)) {
+          return (
+            <a className="inline-contact-link" href={`mailto:${part}`} key={`email-${part}-${index}`}>
+              {part}
+            </a>
+          );
+        }
+        const digits = part.replace(/\D/g, "");
+        if (digits.length === 9 || (digits.length === 12 && digits.startsWith("420"))) {
+          return (
+            <a className="inline-contact-link" href={`tel:${normalizePhoneHref(part)}`} key={`phone-${part}-${index}`}>
+              {part}
+            </a>
+          );
+        }
+        return renderHighlighted(part, `${part}-${index}`);
+      })}
     </p>
   );
 };
@@ -1145,11 +2367,32 @@ function Demands({
   const [rows, setRows] = useState<ImportedDemand[]>([]),
     [loading, setLoading] = useState(true),
     [filtersOpen, setFiltersOpen] = useState(false),
-    [source, setSource] = useState("vše"),
-    [contact, setContact] = useState("vše"),
+    [sourceFilters, setSourceFilters] = useState<string[]>([]),
+    [contactFilters, setContactFilters] = useState<string[]>([]),
+    [roleFilters, setRoleFilters] = useState<string[]>([]),
+    [minScore, setMinScore] = useState("0"),
+    [detailQualityFilters, setDetailQualityFilters] = useState<string[]>([]),
+    [searchHistory, setSearchHistory] = useState<string[]>([]),
+    [selectedDemandIds, setSelectedDemandIds] = useState<string[]>([]),
     [selected, setSelected] = useState<ImportedDemand | null>(null),
     [companyDetail, setCompanyDetail] = useState<ImportedDemand | null>(null),
     [contactDetail, setContactDetail] = useState<ImportedDemand | null>(null);
+  useEffect(() => {
+    const stored = window.localStorage.getItem("neovia-demand-search-history");
+    if (stored) setSearchHistory(JSON.parse(stored));
+  }, []);
+  useEffect(() => {
+    const value = query.trim();
+    if (value.length < 2) return;
+    const timeout = window.setTimeout(() => {
+      setSearchHistory((current) => {
+        const next = [value, ...current.filter((item) => item.toLowerCase() !== value.toLowerCase())].slice(0, 10);
+        window.localStorage.setItem("neovia-demand-search-history", JSON.stringify(next));
+        return next;
+      });
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
   useEffect(() => {
     fetch("/api/demands")
       .then(async (r) => {
@@ -1169,21 +2412,69 @@ function Demands({
       .finally(() => setLoading(false));
   }, []);
   const sources = [...new Set(rows.map((x) => x.source))];
+  const roles = [
+    ...new Set(rows.map((x) => x.role || x.title).filter(Boolean)),
+  ].sort();
+  const contactOptions = ["s kontaktem", "bez kontaktu"];
+  const detailQualityOptions = ["plné znění", "chybí detail"];
+  const toggleMultiValue = (
+    value: string,
+    current: string[],
+    setter: (next: string[]) => void,
+  ) => setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   const displayed = rows.filter((d) => {
     const text =
       `${d.company || ""} ${d.role || d.title} ${(d.technologies || []).join(" ")} ${d.demandText || ""}`.toLowerCase();
     const hasContact = Boolean(d.contactFirstName || d.contactLastName);
+    const score = Number(d.relevanceScore || 0);
     return (
       text.includes(query.toLowerCase()) &&
-      (source === "vše" || d.source === source) &&
-      (contact === "vše" ||
-        (contact === "s kontaktem" && hasContact) ||
-        (contact === "bez kontaktu" && !hasContact))
+      (!sourceFilters.length || sourceFilters.includes(d.source)) &&
+      (!roleFilters.length || roleFilters.includes(d.role || d.title)) &&
+      score >= Number(minScore || 0) &&
+      (!detailQualityFilters.length ||
+        (detailQualityFilters.includes("plné znění") && hasFullDemandText(d)) ||
+        (detailQualityFilters.includes("chybí detail") && !hasFullDemandText(d))) &&
+      (!contactFilters.length ||
+        (contactFilters.includes("s kontaktem") && hasContact) ||
+        (contactFilters.includes("bez kontaktu") && !hasContact))
     );
   });
+  const selectedDemands = rows.filter((row) => selectedDemandIds.includes(row.id));
+  const displayedIds = displayed.map((d) => d.id);
+  const allDisplayedSelected =
+    displayedIds.length > 0 && displayedIds.every((id) => selectedDemandIds.includes(id));
+  const toggleDemandSelection = (id: string) =>
+    setSelectedDemandIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+    );
+  const toggleAllDisplayed = () =>
+    setSelectedDemandIds((current) =>
+      allDisplayedSelected
+        ? current.filter((id) => !displayedIds.includes(id))
+        : [...new Set([...current, ...displayedIds])],
+    );
   const contactName = (d: ImportedDemand) =>
     [d.contactFirstName, d.contactLastName].filter(Boolean).join(" ") ||
     "Kontakt není uveden";
+  const openDemandCompanyCard = (d: ImportedDemand) => {
+    if (!d.companyId && !d.company) {
+      note("Poptávka nemá navázanou firmu.");
+      return;
+    }
+    window.localStorage.setItem("neovia-open-company", d.companyId || d.company || "");
+    setSelected(null);
+    goTo("Kontakty");
+  };
+  const openDemandContactCard = (d: ImportedDemand) => {
+    if (!d.contactId) {
+      note("Poptávka nemá navázanou kontaktní kartu.");
+      return;
+    }
+    window.localStorage.setItem("neovia-open-contact", d.contactId);
+    setSelected(null);
+    goTo("Kontakty");
+  };
   const companyDemands = (d: ImportedDemand) =>
     rows.filter((row) =>
       d.companyId
@@ -1213,9 +2504,170 @@ function Demands({
       note("Poptávku se nepodařilo vytvořit v Pipeline.");
       return;
     }
+    const data = await response.json().catch(() => ({}));
     setSelected(null);
-    note("Poptávka byla převedena do Pipeline, fáze Identifikace.");
+    if (data.alreadyExists) {
+      window.localStorage.setItem("neovia-open-opportunity", data.id);
+      note("Poptávka už v Pipeline byla, otevírám existující obchodní případ.");
+    } else {
+      window.localStorage.setItem("neovia-open-opportunity", data.id);
+      note("Poptávka byla převedena do Pipeline, fáze Identifikace.");
+    }
     goTo("Pipeline");
+  };
+  const createDemandNextStepTask = async (demand: ImportedDemand, step = recommendedNextStep(demand)) => {
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: `${step}: ${demand.company || demand.role || demand.title}`,
+        dueAt: suggestedDueDate(),
+        priority: demandIntelligence(demand).score >= 80 ? 1 : 2,
+        companyId: demand.companyId || null,
+        contactId: demand.contactId || null,
+      }),
+    });
+    if (!response.ok) {
+      note("Úkol se nepodařilo založit.");
+      return;
+    }
+    note(`Úkol byl založen: ${step}.`);
+  };
+  const saveDemandEmailActivity = async (demand: ImportedDemand, subject: string, body: string) => {
+    const response = await fetch("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "email",
+        subject,
+        note: `Koncept e-mailu:\n\n${body}`,
+        companyId: demand.companyId || null,
+        contactId: demand.contactId || null,
+      }),
+    });
+    if (!response.ok) {
+      note("Koncept se nepodařilo uložit jako aktivitu.");
+      return false;
+    }
+    note("Koncept e-mailu byl uložen ke komunikaci.");
+    return true;
+  };
+  const openDemandEmailDraft = async (demand: ImportedDemand) => {
+    const to = demand.contactEmail || "";
+    const subject = `Možnosti spolupráce k roli ${demand.role || demand.title}`;
+    const body = outreachDraft(demand);
+    await saveDemandEmailActivity(demand, subject, body);
+    if (!to) {
+      await navigator.clipboard.writeText(body);
+      note("Kontakt nemá e-mail. Text konceptu je zkopírovaný do schránky.");
+      return;
+    }
+    saveLocalEmailDraft({ to, subject, body, source: `Poptávka ${demand.title}` });
+    note("Koncept je uložený v aplikaci ke kontrole. Gmail se samostatně neotevírá.");
+  };
+  const removeDemand = async () => {
+    if (!selected) return;
+    const confirmed = window.confirm(
+      "Opravdu chcete odstranit tuto poptávku? Poptávka se přesune do koše a při dalším importu stejného zdroje se znovu nenačte.",
+    );
+    if (!confirmed) return;
+    const response = await fetch("/api/demands", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selected.id, reason: "Nerelevantní poptávka" }),
+    });
+    if (!response.ok) {
+      note("Poptávku se nepodařilo odstranit.");
+      return;
+    }
+    setRows(rows.filter((row) => row.id !== selected.id));
+    setSelected(null);
+    note("Poptávka byla přesunuta do koše a nebude se znovu importovat.");
+  };
+  const exportDisplayedDemands = () => {
+    exportDemands(displayed, "neovia-poptavky.csv");
+    note(`Exportováno ${displayed.length} vyfiltrovaných poptávek.`);
+  };
+  const exportSelectedDemands = () => {
+    exportDemands(selectedDemands, "neovia-poptavky-vybrane.csv");
+    note(`Exportováno ${selectedDemands.length} označených poptávek.`);
+  };
+  const exportDemands = (items: ImportedDemand[], filename: string) => {
+    const rowsForExport = [
+      "Poptávka;Firma;Kontakt;Zdroj;Importní relevance;Obchodní skóre;Důvod relevance;Doporučený další krok;Kvalifikace;Lokalita;Import;URL;Klíčová slova",
+      ...items.map((d) =>
+        [
+          d.role || d.title,
+          d.company || "",
+          contactName(d),
+          d.source,
+          `${d.relevanceScore || 0}%`,
+          `${demandIntelligence(d).score}%`,
+          demandIntelligence(d).reasons.join(", "),
+          recommendedNextStep(d),
+          qualificationItems(d).map((item) => `${item.done ? "OK" : "CHYBÍ"} ${item.label}`).join(" | "),
+          d.location || "",
+          new Date(d.importedAt).toLocaleString("cs-CZ"),
+          d.sourceUrl || "",
+          keywordPool(d).join(", "),
+        ]
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(";"),
+      ),
+    ];
+    downloadCsv(rowsForExport, filename);
+  };
+  const bulkDeleteDemands = async () => {
+    if (!selectedDemands.length) return;
+    const confirmed = window.confirm(
+      `Opravdu chcete přesunout do koše ${selectedDemands.length} označených poptávek? Při dalším importu stejného zdroje se znovu nenačtou.`,
+    );
+    if (!confirmed) return;
+    const results = await Promise.allSettled(
+      selectedDemands.map((demand) =>
+        fetch("/api/demands", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: demand.id, reason: "Hromadně označeno jako nerelevantní" }),
+        }),
+      ),
+    );
+    const okIds = selectedDemands
+      .filter((_, index) => results[index].status === "fulfilled" && (results[index] as PromiseFulfilledResult<Response>).value.ok)
+      .map((demand) => demand.id);
+    setRows(rows.filter((row) => !okIds.includes(row.id)));
+    setSelectedDemandIds([]);
+    note(`Do koše přesunuto ${okIds.length} poptávek.`);
+  };
+  const bulkAddToPipeline = async () => {
+    if (!selectedDemands.length) return;
+    const confirmed = window.confirm(
+      `Zařadit ${selectedDemands.length} označených poptávek do Pipeline ve fázi Identifikace?`,
+    );
+    if (!confirmed) return;
+    const results = await Promise.allSettled(
+      selectedDemands.map((demand) =>
+        fetch("/api/opportunities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: demand.role || demand.title,
+            company: demand.company || "Nezařazená firma",
+            demandId: demand.id,
+            stage: "identified",
+            source: demand.source,
+          }),
+        }).then(async (response) => ({
+          ok: response.ok,
+          data: await response.json().catch(() => ({})),
+        })),
+      ),
+    );
+    const createdOrExisting = results.filter(
+      (result) => result.status === "fulfilled" && result.value.ok,
+    ).length;
+    setSelectedDemandIds([]);
+    note(`Do Pipeline zpracováno ${createdOrExisting} poptávek, duplicity se použily jako existující případy.`);
   };
   return (
     <>
@@ -1232,52 +2684,120 @@ function Demands({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            list="demand-search-history"
             placeholder="Hledat firmu, roli, technologii nebo text inzerce"
           />
-          <kbd>⌘ K</kbd>
+          <datalist id="demand-search-history">
+            {searchHistory.map((item) => (
+              <option value={item} key={item} />
+            ))}
+          </datalist>
+          {query && (
+            <button
+              className="search-clear"
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Vyčistit vyhledávání"
+            >
+              ×
+            </button>
+          )}
         </label>
         <button onClick={() => setFiltersOpen(!filtersOpen)}>
           <Filter size={16} />
           Filtry
         </button>
         <button
-          onClick={() =>
-            note(
-              "Zobrazené sloupce odpovídají zdroji a detail najdete po otevření poptávky.",
-            )
-          }
+          onClick={exportDisplayedDemands}
         >
           <SlidersHorizontal size={16} />
-          Sloupce
+          Export
         </button>
       </div>
       {filtersOpen && (
         <div className="filter-panel">
-          <label>
+          <div className="multi-filter">
             Zdroj
-            <select value={source} onChange={(e) => setSource(e.target.value)}>
-              <option value="vše">Všechny zdroje</option>
+            <div>
               {sources.map((x) => (
-                <option key={x}>{x}</option>
+                <button
+                  className={sourceFilters.includes(x) ? "active" : ""}
+                  key={x}
+                  type="button"
+                  onClick={() => toggleMultiValue(x, sourceFilters, setSourceFilters)}
+                >
+                  {x}
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+            {!sourceFilters.length && <small>Všechny zdroje</small>}
+          </div>
+          <div className="multi-filter wide-filter">
+            Role
+            <div>
+              {roles.slice(0, 120).map((x) => (
+                <button
+                  className={roleFilters.includes(x) ? "active" : ""}
+                  key={x}
+                  type="button"
+                  onClick={() => toggleMultiValue(x, roleFilters, setRoleFilters)}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+            {!roleFilters.length && <small>Všechny role</small>}
+          </div>
           <label>
-            Kontakt
-            <select
-              value={contact}
-              onChange={(e) => setContact(e.target.value)}
-            >
-              <option value="vše">Všechny</option>
-              <option value="s kontaktem">Jen s kontaktem</option>
-              <option value="bez kontaktu">Bez kontaktu</option>
+            Min. relevance
+            <select value={minScore} onChange={(e) => setMinScore(e.target.value)}>
+              <option value="0">Vše</option>
+              <option value="50">50 % a více</option>
+              <option value="70">70 % a více</option>
+              <option value="80">80 % a více</option>
+              <option value="90">90 % a více</option>
             </select>
           </label>
+          <div className="multi-filter">
+            Kontakt
+            <div>
+              {contactOptions.map((x) => (
+                <button
+                  className={contactFilters.includes(x) ? "active" : ""}
+                  key={x}
+                  type="button"
+                  onClick={() => toggleMultiValue(x, contactFilters, setContactFilters)}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+            {!contactFilters.length && <small>Všechny</small>}
+          </div>
+          <div className="multi-filter">
+            Detail inzerátu
+            <div>
+              {detailQualityOptions.map((x) => (
+                <button
+                  className={detailQualityFilters.includes(x) ? "active" : ""}
+                  key={x}
+                  type="button"
+                  onClick={() => toggleMultiValue(x, detailQualityFilters, setDetailQualityFilters)}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+            {!detailQualityFilters.length && <small>Vše</small>}
+          </div>
           <button
             className="secondary"
             onClick={() => {
-              setSource("vše");
-              setContact("vše");
+              setSourceFilters([]);
+              setContactFilters([]);
+              setRoleFilters([]);
+              setMinScore("0");
+              setDetailQualityFilters([]);
               setQuery("");
             }}
           >
@@ -1288,9 +2808,39 @@ function Demands({
           </small>
         </div>
       )}
+      {selectedDemandIds.length > 0 && (
+        <section className="bulk-actions panel">
+          <div>
+            <b>{selectedDemandIds.length}</b>
+            <span>označených poptávek</span>
+          </div>
+          <button type="button" onClick={bulkAddToPipeline}>
+            <BriefcaseBusiness size={15} />
+            Zařadit do Pipeline
+          </button>
+          <button type="button" onClick={exportSelectedDemands}>
+            <FileBarChart size={15} />
+            Export vybraných
+          </button>
+          <button type="button" className="danger-secondary" onClick={bulkDeleteDemands}>
+            <Trash2 size={15} />
+            Smazat označené
+          </button>
+          <button type="button" className="secondary" onClick={() => setSelectedDemandIds([])}>
+            Zrušit výběr
+          </button>
+        </section>
+      )}
       <section className="panel list">
         <div className="list-head">
-          <span>Poptávka</span>
+          <label className="select-all">
+            <input
+              type="checkbox"
+              checked={allDisplayedSelected}
+              onChange={toggleAllDisplayed}
+            />
+            Poptávka
+          </label>
           <span>Kontakt</span>
           <span>Stav</span>
           <span>Relevance</span>
@@ -1300,13 +2850,33 @@ function Demands({
         ) : displayed.length === 0 ? (
           <div className="empty-state">
             Žádná poptávka neodpovídá zvolenému filtru.
+            <button
+              className="inline-cta"
+              onClick={() => {
+                setSourceFilters([]);
+                setContactFilters([]);
+                setRoleFilters([]);
+                setMinScore("0");
+                setDetailQualityFilters([]);
+                setQuery("");
+              }}
+            >
+              Vyčistit filtry
+            </button>
           </div>
         ) : (
           displayed.map((d) => {
             const tags = keywordPool(d);
             return (
             <div className="list-row" key={d.id}>
-              <div>
+              <div className="demand-cell">
+                <input
+                  type="checkbox"
+                  checked={selectedDemandIds.includes(d.id)}
+                  onChange={() => toggleDemandSelection(d.id)}
+                  aria-label={`Označit poptávku ${d.role || d.title}`}
+                />
+                <div>
                 <button
                   className="demand-title-link"
                   type="button"
@@ -1322,7 +2892,11 @@ function Demands({
                   {(tags.length ? tags : [d.source]).slice(0, 5).map((t) => (
                     <span key={t}>{t}</span>
                   ))}
+                  <span className={hasFullDemandText(d) ? "detail-ok" : "detail-missing"}>
+                    {hasFullDemandText(d) ? "plné znění" : "chybí detail"}
+                  </span>
                 </p>
+                </div>
               </div>
               <div>
                 <b>{contactName(d)}</b>
@@ -1349,7 +2923,28 @@ function Demands({
                 <h2>{selected.role || selected.title}</h2>
                 <span className="source-tag">{selected.source}</span>
               </div>
-              <button onClick={() => setSelected(null)}>×</button>
+              <div className="modal-header-actions">
+                <button
+                  className="danger-icon-button"
+                  type="button"
+                  onClick={removeDemand}
+                  title="Odstranit nerelevantní poptávku"
+                >
+                  <Trash2 size={17} />
+                  Koš
+                </button>
+                {selected.sourceUrl && (
+                  <a
+                    className="secondary detail-source-button"
+                    href={selected.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Otevřít původní zdroj
+                  </a>
+                )}
+                <button onClick={() => setSelected(null)}>×</button>
+              </div>
             </header>
             <div className="detail-meta">
               <span>
@@ -1357,7 +2952,7 @@ function Demands({
                 <button
                   className="entity-link"
                   type="button"
-                  onClick={() => setCompanyDetail(selected)}
+                  onClick={() => openDemandCompanyCard(selected)}
                 >
                   {selected.company || "Nezařazená firma"}
                 </button>
@@ -1371,7 +2966,7 @@ function Demands({
                 <button
                   className="entity-link"
                   type="button"
-                  onClick={() => setContactDetail(selected)}
+                  onClick={() => openDemandContactCard(selected)}
                   disabled={!selected.contactId && contactName(selected) === "Kontakt není uveden"}
                 >
                   {contactName(selected)}
@@ -1381,7 +2976,54 @@ function Demands({
                 <b>Import</b>
                 {new Date(selected.importedAt).toLocaleString("cs-CZ")}
               </span>
+              <span>
+                <b>Kvalita detailu</b>
+                <span className={hasFullDemandText(selected) ? "detail-ok" : "detail-missing"}>
+                  {hasFullDemandText(selected) ? "Plné znění uloženo" : "Detail je potřeba ověřit u zdroje"}
+                </span>
+              </span>
             </div>
+            <section className="sales-intel-card">
+              <div>
+                <span>OBCHODNÍ SKÓRE</span>
+                <strong>{demandIntelligence(selected).score}%</strong>
+                <b>{demandIntelligence(selected).label}</b>
+              </div>
+              <article>
+                <h3>Proč je poptávka relevantní</h3>
+                <ul>
+                  {demandIntelligence(selected).reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </article>
+              <article>
+                <h3>Doporučený další krok</h3>
+                <p>{recommendedNextStep(selected)}</p>
+                <div className="intel-actions">
+                  <button type="button" onClick={() => createDemandNextStepTask(selected)}>
+                    Vytvořit úkol
+                  </button>
+                  <button type="button" className="secondary" onClick={() => openDemandEmailDraft(selected)}>
+                    Otevřít v Gmailu
+                  </button>
+                  <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
+                    Zkopírovat cold e-mail
+                  </button>
+                </div>
+              </article>
+            </section>
+            <section className="qualification-panel">
+              <h3>Kvalifikační checklist</h3>
+              <div>
+                {qualificationItems(selected).map((item) => (
+                  <span className={item.done ? "done" : ""} key={item.label}>
+                    {item.done ? <Check size={14} /> : <CircleAlert size={14} />}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </section>
             <article className="detail-text">
               <h3>Kompletní znění inzerce</h3>
               <HighlightedDemandText
@@ -1391,6 +3033,33 @@ function Demands({
                 }
                 keywords={keywordPool(selected)}
               />
+              <div className="demand-action-strip">
+                <span>
+                  <b>Další obchodní akce</b>
+                  {recommendedNextStep(selected)}. Obchodní případ se založí do Pipeline ve fázi Identifikace.
+                </span>
+                <button type="button" onClick={addToPipeline}>
+                  Vytvořit obchodní případ
+                </button>
+              </div>
+              {demandDuplicates(selected, rows).length > 0 && (
+                <div className="duplicate-check">
+                  <CircleAlert size={16} />
+                  <div>
+                    <b>Možné duplicitní poptávky</b>
+                    <span>
+                      {demandDuplicates(selected, rows).map((item) => `${item.company || "Firma"}: ${item.role || item.title}`).join(" | ")}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="outreach-box">
+                <h3>Návrh cold e-mailu</h3>
+                <pre>{outreachDraft(selected)}</pre>
+                <button type="button" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
+                  Kopírovat text
+                </button>
+              </div>
               <div className="keyword-pool">
                 <h3>Vytěžené role a štítky</h3>
                 <div>
@@ -1405,21 +3074,6 @@ function Demands({
                 </div>
               </div>
             </article>
-            <footer>
-              {selected.sourceUrl && (
-                <a
-                  className="secondary"
-                  href={selected.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Otevřít původní zdroj
-                </a>
-              )}
-              <button className="primary" onClick={addToPipeline}>
-                Zařadit do pipeline
-              </button>
-            </footer>
           </section>
         </div>
       )}
@@ -1577,7 +3231,9 @@ function Contacts({
     companyId: "",
     role: "",
     email: "",
+    secondaryEmail: "",
     phone: "",
+    secondaryPhone: "",
     source: "Ručně",
     verified: false,
   };
@@ -1587,7 +3243,12 @@ function Contacts({
     [companies, setCompanies] = useState<CompanyRecord[]>([]),
     [companyOpen, setCompanyOpen] = useState(false),
     [companyDetail, setCompanyDetail] = useState<CompanyRecord | null>(null),
+    [crmSearch, setCrmSearch] = useState(""),
+    [contactFilter, setContactFilter] = useState("vše"),
+    [companyFilter, setCompanyFilter] = useState("vše"),
     [demands, setDemands] = useState<ImportedDemand[]>([]),
+    [opportunities, setOpportunities] = useState<DashboardOpportunity[]>([]),
+    [activities, setActivities] = useState<ActivityRecord[]>([]),
     [form, setForm] = useState(emptyForm);
   const emptyCompanyForm = {
     id: "",
@@ -1596,15 +3257,74 @@ function Contacts({
     website: "",
     sector: "",
     source: "Ručně",
+    priority: "",
+    size: "",
+    relationshipStatus: "",
+    ownerName: "",
+    decisionMaker: "",
+    nextStep: "",
+    nextStepDueAt: "",
+    note: "",
+    doNotContact: false,
   };
   const [companyForm, setCompanyForm] = useState(emptyCompanyForm);
+  const emptyActivityForm = {
+    type: "call",
+    subject: "",
+    note: "",
+    occurredAt: "",
+    nextStep: "",
+    nextStepDueAt: "",
+    priority: "2",
+    companyId: "",
+    contactId: "",
+    opportunityId: "",
+  };
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityForm, setActivityForm] = useState(emptyActivityForm);
   const [loading, setLoading] = useState(true);
   const normalized = (v: string) => v.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const normalizedText = (value: unknown) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ");
+  const companyIdentityKey = (value: string) =>
+    normalizedText(value)
+      .replace(/\bspol\.?\s*s\.?\s*r\.?\s*o\.?\b/g, " ")
+      .replace(/\bs\.?\s*r\.?\s*o\.?\b/g, " ")
+      .replace(/\ba\.?\s*s\.?\b/g, " ")
+      .replace(/\bk\.?\s*s\.?\b/g, " ")
+      .replace(/\bv\.?\s*o\.?\s*s\.?\b/g, " ")
+      .replace(/\b(ltd|limited|inc|corp|corporation|gmbh|llc)\b/g, " ")
+      .replace(/[^a-z0-9]/g, "");
+  const emailKey = (value?: string) => normalizedText(value).replace(/\s/g, "");
+  const phoneKey = (value?: string) => String(value || "").replace(/\D/g, "");
+  const sameCompanyIdentity = (left: CompanyRecord, right: CompanyRecord) => {
+    const leftKey = companyIdentityKey(left.name);
+    const rightKey = companyIdentityKey(right.name);
+    const sameName =
+      leftKey.length > 3 &&
+      rightKey.length > 3 &&
+      (leftKey === rightKey ||
+        (Math.min(leftKey.length, rightKey.length) >= 5 &&
+          (leftKey.includes(rightKey) || rightKey.includes(leftKey))));
+    const sameIco = Boolean(left.ico && right.ico && normalized(left.ico) === normalized(right.ico));
+    return sameName || sameIco;
+  };
   const matches = contacts.filter(
     (c) =>
       c.id !== form.id &&
       ((form.email && normalized(c.email) === normalized(form.email)) ||
-        (form.phone && normalized(c.phone) === normalized(form.phone))),
+        (form.secondaryEmail && normalized(c.email) === normalized(form.secondaryEmail)) ||
+        (form.email && normalized(c.secondaryEmail || "") === normalized(form.email)) ||
+        (form.secondaryEmail && normalized(c.secondaryEmail || "") === normalized(form.secondaryEmail)) ||
+        (form.phone && normalized(c.phone) === normalized(form.phone)) ||
+        (form.secondaryPhone && normalized(c.phone) === normalized(form.secondaryPhone)) ||
+        (form.phone && normalized(c.secondaryPhone || "") === normalized(form.phone)) ||
+        (form.secondaryPhone && normalized(c.secondaryPhone || "") === normalized(form.secondaryPhone))),
   );
   const load = () => {
     setLoading(true);
@@ -1615,41 +3335,67 @@ function Contacts({
       }),
       fetch("/api/demands").then((response) => (response.ok ? response.json() : [])),
       fetch("/api/companies").then((response) => (response.ok ? response.json() : [])),
+      fetch("/api/opportunities").then((response) => (response.ok ? response.json() : [])),
+      fetch("/api/activities").then((response) => (response.ok ? response.json() : [])),
     ])
-      .then(([contactRows, demandRows, companyRows]) => {
+      .then(([contactRows, demandRows, companyRows, opportunityRows, activityRows]) => {
         setDemands(demandRows);
         setCompanies(companyRows);
-        setContacts(
-          contactRows.map(
-            (c: {
-              id: string;
-              companyId: string | null;
-              firstName: string;
-              lastName: string;
-              company: string | null;
-              role: string | null;
-              email: string | null;
-              phone: string | null;
-              source: string | null;
-              companySource: string | null;
-              verified: boolean;
-              updatedAt: string;
-            }) => ({
-              id: c.id,
-              companyId: c.companyId,
-              name: `${c.firstName} ${c.lastName}`,
-              company: c.company || "Nezařazená firma",
-              role: c.role || "Nezařazená role",
-              email: c.email || "—",
-              phone: c.phone || "—",
-              source: c.source || c.companySource || "Zdroj neuveden",
-              state: c.verified ? "Ověřený" : "K ověření",
-              duplicates: 0,
-              last: new Date(c.updatedAt).toLocaleDateString("cs-CZ"),
-              verified: c.verified,
-            }),
-          ),
+        setOpportunities(opportunityRows);
+        setActivities(activityRows);
+        const mappedContacts = contactRows.map(
+          (c: {
+            id: string;
+            companyId: string | null;
+            firstName: string;
+            lastName: string;
+            company: string | null;
+            role: string | null;
+            email: string | null;
+            secondaryEmail: string | null;
+            phone: string | null;
+            secondaryPhone: string | null;
+            source: string | null;
+            companySource: string | null;
+            verified: boolean;
+            updatedAt: string;
+          }) => ({
+            id: c.id,
+            companyId: c.companyId,
+            name: `${c.firstName} ${c.lastName}`,
+            company: c.company || "Nezařazená firma",
+            role: c.role || "Nezařazená role",
+            email: c.email || "—",
+            secondaryEmail: c.secondaryEmail || "",
+            phone: c.phone || "—",
+            secondaryPhone: c.secondaryPhone || "",
+            source: c.source || c.companySource || "Zdroj neuveden",
+            state: c.verified ? "Ověřený" : "K ověření",
+            duplicates: 0,
+            last: new Date(c.updatedAt).toLocaleDateString("cs-CZ"),
+            verified: c.verified,
+          }),
         );
+        setContacts(mappedContacts);
+        const requestedContact = window.localStorage.getItem("neovia-open-contact");
+        if (requestedContact) {
+          const contact = mappedContacts.find((x: Contact) => x.id === requestedContact);
+          if (contact) {
+            window.localStorage.removeItem("neovia-open-contact");
+            setCrmTab("contacts");
+            openDetail(contact);
+            return;
+          }
+        }
+        const requestedCompany = window.localStorage.getItem("neovia-open-company");
+        if (requestedCompany) {
+          const company = companyRows.find((x: CompanyRecord) => x.name === requestedCompany || x.id === requestedCompany);
+          if (company) {
+            window.localStorage.removeItem("neovia-open-company");
+            setCrmTab("companies");
+            openCompanyDetail(company);
+          }
+        }
       })
       .catch(() => note("Kontakty se nepodařilo načíst."))
       .finally(() => setLoading(false));
@@ -1663,8 +3409,20 @@ function Contacts({
         ? d.contactId === contact.id
         : d.contactEmail === contact.email || d.company === contact.company,
     );
+  const contactActivities = (contact: Contact) =>
+    activities.filter((activity) => activity.contactId === contact.id);
   const openCreate = () => {
     setForm(emptyForm);
+    setOpen(true);
+  };
+  const openCreateForCompany = (company: CompanyRecord) => {
+    setForm({
+      ...emptyForm,
+      company: company.name,
+      companyId: company.id,
+      source: company.source || "Ručně",
+    });
+    setCompanyDetail(null);
     setOpen(true);
   };
   const openDetail = (contact: Contact) => {
@@ -1676,13 +3434,15 @@ function Contacts({
       companyId: contact.companyId || "",
       role: contact.role === "Nezařazená role" ? "" : contact.role,
       email: contact.email === "—" ? "" : contact.email,
+      secondaryEmail: contact.secondaryEmail || "",
       phone: contact.phone === "—" ? "" : contact.phone,
+      secondaryPhone: contact.secondaryPhone || "",
       source: contact.source === "Zdroj neuveden" ? "" : contact.source,
       verified: contact.verified,
     });
   };
   const save = async () => {
-    if (!form.name || !form.company || (!form.email && !form.phone)) {
+    if (!form.name || !form.company || (!form.email && !form.secondaryEmail && !form.phone && !form.secondaryPhone)) {
       note("Doplňte jméno, firmu a alespoň e-mail nebo telefon.");
       return;
     }
@@ -1702,7 +3462,9 @@ function Contacts({
         company: form.company,
         role: form.role,
         email: form.email,
+        secondaryEmail: form.secondaryEmail,
         phone: form.phone,
+        secondaryPhone: form.secondaryPhone,
         source: form.source,
         verified: form.verified,
       }),
@@ -1712,22 +3474,32 @@ function Contacts({
       note(data.error || "Kartu se nepodařilo uložit do databáze.");
       return;
     }
+    const savedContact = await response.json().catch(() => null);
     setOpen(false);
     setDetail(null);
     setForm(emptyForm);
     load();
-    note(form.id ? "Kontaktní karta byla upravena." : "Kontaktní karta byla uložena do společné databáze.");
+    if (!form.id && savedContact?.companyId && window.confirm("Kontakt je uložený. Chcete teď doplnit informace k firemní kartě?")) {
+      window.localStorage.setItem("neovia-open-company", savedContact.companyId);
+      setCrmTab("companies");
+      setTimeout(load, 200);
+      note("Otevírám firemní kartu k doplnění.");
+    } else {
+      note(form.id ? "Kontaktní karta byla upravena." : "Kontaktní karta byla uložena do společné databáze.");
+    }
   };
   const exportContacts = () => {
     const rows = [
-      "Jméno;Firma;Role;E-mail;Telefon;Zdroj;Stav;Navázané poptávky",
-      ...contacts.map((c) =>
+      "Jméno;Firma;Role;E-mail;2. e-mail;Telefon;2. telefon;Zdroj;Stav;Navázané poptávky",
+      ...displayedContacts.map((c) =>
         [
           c.name,
           c.company,
           c.role,
           c.email,
+          c.secondaryEmail || "",
           c.phone,
+          c.secondaryPhone || "",
           c.source,
           c.state,
           String(contactDemands(c).length),
@@ -1736,13 +3508,7 @@ function Contacts({
           .join(";"),
       ),
     ];
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }),
-    );
-    link.download = "neovia-kontakty.csv";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    downloadCsv(rows, "neovia-kontakty.csv");
     note("Export kontaktů byl připraven.");
   };
   const openDemand = (demand: ImportedDemand) => {
@@ -1763,6 +3529,138 @@ function Contacts({
     demands.filter((demand) =>
       demand.companyId ? demand.companyId === company.id : demand.company === company.name,
     );
+  const companyOpportunities = (company: CompanyRecord) =>
+    opportunities.filter((opportunity) =>
+      opportunity.companyId ? opportunity.companyId === company.id : opportunity.company === company.name,
+    );
+  const companyActivities = (company: CompanyRecord) =>
+    activities.filter((activity) => activity.companyId === company.id);
+  const companyHealth = (company: CompanyRecord) => {
+    const companyDemandRows = companyDemands(company);
+    const companyContactRows = companyContacts(company);
+    const bestScore = Math.max(0, ...companyDemandRows.map((demand) => demandIntelligence(demand).score));
+    const missingNextStep = !company.nextStep && !company.nextStepDueAt;
+    const recommended =
+      company.doNotContact ? "Neoslovovat" :
+      companyContactRows.length === 0 ? "Doplnit kontakt" :
+      bestScore >= 80 ? "Zavolat kvůli top poptávce" :
+      companyDemandRows.length > 0 ? "Kvalifikovat firmu" :
+      "Sledovat nové signály";
+    return { bestScore, recommended, missingNextStep };
+  };
+  const companyDuplicateSignals = (company: CompanyRecord) =>
+    companies
+      .filter((item) => item.id !== company.id)
+      .filter((item) => sameCompanyIdentity(company, item))
+      .slice(0, 5);
+  const companyDuplicateGroups = () => {
+    const visited = new Set<string>();
+    const groups: CompanyRecord[][] = [];
+    companies.forEach((company) => {
+      if (visited.has(company.id)) return;
+      const group = companies.filter((item) => item.id === company.id || sameCompanyIdentity(company, item));
+      if (group.length > 1) {
+        group.forEach((item) => visited.add(item.id));
+        groups.push(group);
+      }
+    });
+    return groups;
+  };
+  const contactDuplicateSignals = (contact: Contact) =>
+    contacts
+      .filter((item) => item.id !== contact.id)
+      .filter((item) => {
+        const emails = [contact.email, contact.secondaryEmail]
+          .map((value) => emailKey(value))
+          .filter((value) => value && value !== "—");
+        const itemEmails = [item.email, item.secondaryEmail]
+          .map((value) => emailKey(value))
+          .filter((value) => value && value !== "—");
+        const phones = [contact.phone, contact.secondaryPhone]
+          .map((value) => phoneKey(value))
+          .filter((value) => value.length >= 9);
+        const itemPhones = [item.phone, item.secondaryPhone]
+          .map((value) => phoneKey(value))
+          .filter((value) => value.length >= 9);
+        const sameNameAndCompany =
+          normalizedText(contact.name) === normalizedText(item.name) &&
+          companyIdentityKey(contact.company) === companyIdentityKey(item.company);
+        return emails.some((email) => itemEmails.includes(email)) || phones.some((phone) => itemPhones.includes(phone)) || sameNameAndCompany;
+      })
+      .slice(0, 5);
+  const displayedContacts = contacts.filter((contact) => {
+    const text = `${contact.name} ${contact.company} ${contact.role} ${contact.email} ${contact.secondaryEmail || ""} ${contact.phone} ${contact.secondaryPhone || ""} ${contact.source}`.toLowerCase();
+    const hasContactData = contact.email !== "—" && contact.phone !== "—";
+    return (
+      text.includes(crmSearch.toLowerCase()) &&
+      (contactFilter === "vše" ||
+        (contactFilter === "ověřené" && contact.verified) ||
+        (contactFilter === "k ověření" && !contact.verified) ||
+        (contactFilter === "bez údajů" && !hasContactData))
+    );
+  });
+  const displayedCompanies = companies.filter((company) => {
+    const text = `${company.name} ${company.ico || ""} ${company.website || ""} ${company.sector || ""} ${company.source || ""} ${company.priority || ""} ${company.relationshipStatus || ""} ${company.ownerName || ""} ${company.decisionMaker || ""}`.toLowerCase();
+    return (
+      text.includes(crmSearch.toLowerCase()) &&
+      (companyFilter === "vše" ||
+        (companyFilter === "prioritní" && ["vysoká", "high", "a"].includes(String(company.priority || "").toLowerCase())) ||
+        (companyFilter === "neoslovovat" && company.doNotContact) ||
+        (companyFilter === "bez kontaktů" && Number(company.contactsCount || 0) === 0) ||
+        (companyFilter === "s poptávkou" && Number(company.demandsCount || 0) > 0) ||
+        (companyFilter === "top poptávka" && companyHealth(company).bestScore >= 80) ||
+        (companyFilter === "bez dalšího kroku" && companyHealth(company).missingNextStep) ||
+        (companyFilter === "duplicity" && companyDuplicateSignals(company).length > 0))
+    );
+  });
+  const openOpportunity = (opportunityId: string) => {
+    window.localStorage.setItem("neovia-open-opportunity", opportunityId);
+    goTo("Pipeline");
+  };
+  const openActivityForContact = (contact: Contact) => {
+    setActivityForm({
+      ...emptyActivityForm,
+      companyId: contact.companyId || "",
+      contactId: contact.id,
+      subject: `Aktivita: ${contact.name}`,
+    });
+    setActivityOpen(true);
+  };
+  const saveContactEmailActivity = async (contact: Contact) => {
+    const relatedDemands = contactDemands(contact);
+    const subject = `Možnosti IT spolupráce pro ${contact.company}`;
+    const body = contactOutreachDraft(contact, relatedDemands);
+    const response = await fetch("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "email",
+        subject,
+        note: `Koncept e-mailu:\n\n${body}`,
+        companyId: contact.companyId || null,
+        contactId: contact.id,
+      }),
+    });
+    if (!response.ok) {
+      note("Koncept e-mailu se nepodařilo uložit ke kontaktu.");
+      return;
+    }
+    if (contact.email === "—") {
+      await navigator.clipboard.writeText(body);
+      note("Kontakt nemá e-mail. Text je zkopírovaný do schránky.");
+      return;
+    }
+    saveLocalEmailDraft({ to: contact.email, subject, body, source: `Kontakt ${contact.name}` });
+    note("Koncept byl uložen ke kontaktu a do interní fronty ke kontrole. Gmail se samostatně neotevírá.");
+  };
+  const openActivityForCompany = (company: CompanyRecord) => {
+    setActivityForm({
+      ...emptyActivityForm,
+      companyId: company.id,
+      subject: `Aktivita: ${company.name}`,
+    });
+    setActivityOpen(true);
+  };
   const openCompanyCreate = () => {
     setCompanyForm(emptyCompanyForm);
     setCompanyDetail(null);
@@ -1777,6 +3675,15 @@ function Contacts({
       website: company.website || "",
       sector: company.sector || "",
       source: company.source || "Ručně",
+      priority: company.priority || "",
+      size: company.size || "",
+      relationshipStatus: company.relationshipStatus || "",
+      ownerName: company.ownerName || "",
+      decisionMaker: company.decisionMaker || "",
+      nextStep: company.nextStep || "",
+      nextStepDueAt: company.nextStepDueAt ? company.nextStepDueAt.slice(0, 16) : "",
+      note: company.note || "",
+      doNotContact: Boolean(company.doNotContact),
     });
   };
   const saveCompany = async () => {
@@ -1797,34 +3704,74 @@ function Contacts({
     setCompanyOpen(false);
     setCompanyDetail(null);
     setCompanyForm(emptyCompanyForm);
+    if (companyForm.nextStep && companyForm.nextStepDueAt) {
+      await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${companyForm.nextStep}: ${companyForm.name}`,
+          dueAt: companyForm.nextStepDueAt,
+          priority: companyForm.priority === "Vysoká" ? 1 : 2,
+          companyId: companyForm.id || null,
+        }),
+      });
+    }
     load();
-    note(companyForm.id ? "Firemní karta byla upravena." : "Firemní karta byla založena.");
+    note(
+      companyForm.nextStep && companyForm.nextStepDueAt
+        ? "Firemní karta byla uložena a další krok je v úkolech."
+        : companyForm.id
+          ? "Firemní karta byla upravena."
+          : "Firemní karta byla založena.",
+    );
+  };
+  const saveActivity = async () => {
+    if (!activityForm.subject.trim()) {
+      note("Doplňte předmět aktivity.");
+      return;
+    }
+    const response = await fetch("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(activityForm),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Aktivitu se nepodařilo uložit.");
+      return;
+    }
+    setActivityOpen(false);
+    setActivityForm(emptyActivityForm);
+    load();
+    note(activityForm.nextStep && activityForm.nextStepDueAt ? "Aktivita byla uložena a další krok je v úkolech." : "Aktivita byla uložena.");
   };
   const exportCompanies = () => {
     const rows = [
-      "Firma;IČO;Web;Sektor;Zdroj;Kontakty;Poptávky;Příležitosti",
-      ...companies.map((company) =>
+      "Firma;IČO;Web;Sektor;Zdroj;Priorita;Velikost;Stav vztahu;Vlastník;Decision maker;Další krok;Termín;Neoslovovat;Kontakty;Poptávky;Příležitosti",
+      ...displayedCompanies.map((company) =>
         [
           company.name,
           company.ico || "",
           company.website || "",
           company.sector || "",
           company.source || "",
+          company.priority || "",
+          company.size || "",
+          company.relationshipStatus || "",
+          company.ownerName || "",
+          company.decisionMaker || "",
+          company.nextStep || "",
+          company.nextStepDueAt || "",
+          company.doNotContact ? "ano" : "ne",
           String(company.contactsCount || companyContacts(company).length),
           String(company.demandsCount || companyDemands(company).length),
-          String(company.opportunitiesCount || 0),
+          String(company.opportunitiesCount || companyOpportunities(company).length),
         ]
           .map((value) => `"${String(value).replace(/"/g, '""')}"`)
           .join(";"),
       ),
     ];
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }),
-    );
-    link.download = "neovia-firmy.csv";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    downloadCsv(rows, "neovia-firmy.csv");
     note("Export firem byl připraven.");
   };
   const activeDetail = detail;
@@ -1866,26 +3813,168 @@ function Contacts({
         <Sparkles size={18} />
         <div>
           <b>Kontrola duplicit je aktivní</b>
-          <small>Každá nová i upravená karta se porovnává podle e-mailu a telefonu.</small>
+          <small>Kontakty se porovnávají podle e-mailů, telefonů i jména ve firmě. Firmy podle IČO a očištěného názvu bez právní formy.</small>
         </div>
-        <button onClick={() => note("Duplicity se kontrolují při založení i úpravě karty.")}>
+        <button onClick={() => note("Duplicity se kontrolují při založení i úpravě karty a CRM radar ukazuje sloučené duplicitní skupiny.")}>
           Jak to funguje
         </button>
       </div>
+      <div className="toolbar crm-toolbar">
+        <label>
+          <Search size={17} />
+          <input
+            value={crmSearch}
+            onChange={(e) => setCrmSearch(e.target.value)}
+            placeholder="Hledat kontakt, firmu, e-mail, IČO, zdroj nebo decision makera"
+          />
+        </label>
+        {crmTab === "contacts" ? (
+          <select value={contactFilter} onChange={(e) => setContactFilter(e.target.value)}>
+            <option value="vše">Všechny kontakty</option>
+            <option value="ověřené">Ověřené</option>
+            <option value="k ověření">K ověření</option>
+            <option value="bez údajů">Bez kompletních údajů</option>
+          </select>
+        ) : (
+          <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
+            <option value="vše">Všechny firmy</option>
+            <option value="prioritní">Prioritní</option>
+            <option value="s poptávkou">S poptávkou</option>
+            <option value="bez kontaktů">Bez kontaktů</option>
+            <option value="top poptávka">Top poptávka</option>
+            <option value="bez dalšího kroku">Bez dalšího kroku</option>
+            <option value="duplicity">Duplicity</option>
+            <option value="neoslovovat">Neoslovovat</option>
+          </select>
+        )}
+        <button
+          className="secondary"
+          onClick={() => {
+            setCrmSearch("");
+            setContactFilter("vše");
+            setCompanyFilter("vše");
+          }}
+        >
+          Vyčistit
+        </button>
+      </div>
+      <section className="crm-kpis">
+        <button
+          type="button"
+          onClick={() => {
+            setCrmTab("contacts");
+            setContactFilter("ověřené");
+            setCrmSearch("");
+          }}
+        >
+          <b>{contacts.filter((contact) => contact.verified).length}</b>
+          <small>ověřených kontaktů</small>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCrmTab("companies");
+            setCompanyFilter("prioritní");
+            setCrmSearch("");
+          }}
+        >
+          <b>{companies.filter((company) => ["vysoká", "high", "a"].includes(String(company.priority || "").toLowerCase())).length}</b>
+          <small>prioritních firem</small>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCrmTab("companies");
+            setCompanyFilter("bez kontaktů");
+            setCrmSearch("");
+          }}
+        >
+          <b>{companies.filter((company) => Number(company.contactsCount || 0) === 0).length}</b>
+          <small>firem bez kontaktu</small>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            goTo("Úkoly");
+          }}
+        >
+          <b>{activities.length}</b>
+          <small>zapsaných aktivit</small>
+        </button>
+      </section>
+      <section className="panel sales-radar crm-radar">
+        <div className="panel-header">
+          <h2>CRM radar</h2>
+          <button onClick={() => setCrmTab("companies")}>
+            Otevřít firmy
+            <ArrowUpRight size={14} />
+          </button>
+        </div>
+        <div className="radar-grid">
+          <button
+            type="button"
+            onClick={() => {
+              setCrmTab("companies");
+              setCompanyFilter("top poptávka");
+              setCrmSearch("");
+            }}
+          >
+            <b>{companies.filter((company) => companyHealth(company).bestScore >= 80).length}</b>
+            <span>firem s top poptávkou</span>
+            <small>skóre 80 % a více</small>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCrmTab("companies");
+              setCompanyFilter("bez dalšího kroku");
+              setCrmSearch("");
+            }}
+          >
+            <b>{companies.filter((company) => companyHealth(company).missingNextStep).length}</b>
+            <span>bez dalšího kroku</span>
+            <small>chybí navazující obchodní akce</small>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCrmTab("contacts");
+              setContactFilter("bez údajů");
+              setCrmSearch("");
+            }}
+          >
+            <b>{contacts.filter((contact) => contact.email === "—" || contact.phone === "—").length}</b>
+            <span>neúplných kontaktů</span>
+            <small>chybí e-mail nebo telefon</small>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCrmTab("companies");
+              setCompanyFilter("duplicity");
+              setCrmSearch("");
+            }}
+          >
+            <b>{companyDuplicateGroups().length}</b>
+            <span>duplicitních signálů</span>
+            <small>skupiny podle názvu nebo IČO</small>
+          </button>
+        </div>
+      </section>
       <div className="crm-tabs">
         <button
           className={crmTab === "contacts" ? "active" : ""}
           onClick={() => setCrmTab("contacts")}
         >
           Kontakty
-          <span>{contacts.length}</span>
+          <span>{displayedContacts.length}/{contacts.length}</span>
         </button>
         <button
           className={crmTab === "companies" ? "active" : ""}
           onClick={() => setCrmTab("companies")}
         >
           Firmy
-          <span>{companies.length}</span>
+          <span>{displayedCompanies.length}/{companies.length}</span>
         </button>
       </div>
       {crmTab === "contacts" && (
@@ -1900,12 +3989,12 @@ function Contacts({
           <div className="empty-state">
             Načítám kontakty ze společné databáze…
           </div>
-        ) : contacts.length === 0 ? (
+        ) : displayedContacts.length === 0 ? (
           <div className="empty-state">
-            Zatím není uložený žádný kontakt. Vytvořte kartu ručně nebo spusťte import.
+            Žádný kontakt neodpovídá aktuálnímu vyhledávání nebo filtru.
           </div>
         ) : (
-          contacts.map((c) => (
+          displayedContacts.map((c) => (
             <div className="contact-row" key={c.id || c.email}>
               <button className="person person-link" onClick={() => openDetail(c)}>
                 <span className="avatar color">
@@ -1944,6 +4033,11 @@ function Contacts({
                 )}
               </div>
               <small>{contactDemands(c).length} poptávek · {c.last}</small>
+              {contactDuplicateSignals(c).length > 0 && (
+                <span className="duplicate mini-duplicate">
+                  {contactDuplicateSignals(c).length} možná duplicita
+                </span>
+              )}
               <button className="quiet" onClick={() => openDetail(c)}>
                 <MoreHorizontal size={18} />
               </button>
@@ -1962,12 +4056,12 @@ function Contacts({
           </div>
           {loading ? (
             <div className="empty-state">Načítám firmy ze společné databáze…</div>
-          ) : companies.length === 0 ? (
+          ) : displayedCompanies.length === 0 ? (
             <div className="empty-state">
-              Zatím není založená žádná firemní karta. Přidejte firmu ručně nebo spusťte import.
+              Žádná firma neodpovídá aktuálnímu vyhledávání nebo filtru.
             </div>
           ) : (
-            companies.map((company) => (
+            displayedCompanies.map((company) => (
               <div className="contact-row company-row" key={company.id}>
                 <button className="person person-link" onClick={() => openCompanyDetail(company)}>
                   <span className="avatar blue">
@@ -1987,11 +4081,17 @@ function Contacts({
                 <div className="contact-data">
                   <span>{companyContacts(company).length || company.contactsCount || 0} kontaktů</span>
                   <span>{companyDemands(company).length || company.demandsCount || 0} poptávek</span>
+                  <span>{companyHealth(company).recommended}</span>
                 </div>
                 <div>
                   <span className="source-tag">{company.source || "Zdroj neuveden"}</span>
                 </div>
-                <small>{company.opportunitiesCount || 0} příležitostí · {new Date(company.updatedAt).toLocaleDateString("cs-CZ")}</small>
+                <small>{companyOpportunities(company).length || company.opportunitiesCount || 0} příležitostí · {new Date(company.updatedAt).toLocaleDateString("cs-CZ")}</small>
+                {companyDuplicateSignals(company).length > 0 && (
+                  <span className="duplicate mini-duplicate">
+                    {companyDuplicateSignals(company).length} možná duplicita
+                  </span>
+                )}
                 <button className="quiet" onClick={() => openCompanyDetail(company)}>
                   <MoreHorizontal size={18} />
                 </button>
@@ -2034,13 +4134,47 @@ function Contacts({
                 </div>
               </div>
             )}
+            {activeDetail && (
+              <section className="qualification-panel">
+                <h3>Stav kontaktu</h3>
+                <div>
+                  <span className={activeDetail.email !== "—" ? "done" : ""}>
+                    {activeDetail.email !== "—" ? <Check size={14} /> : <CircleAlert size={14} />}
+                    E-mail
+                  </span>
+                  <span className={activeDetail.phone !== "—" ? "done" : ""}>
+                    {activeDetail.phone !== "—" ? <Check size={14} /> : <CircleAlert size={14} />}
+                    Telefon
+                  </span>
+                  <span className={activeDetail.verified ? "done" : ""}>
+                    {activeDetail.verified ? <Check size={14} /> : <CircleAlert size={14} />}
+                    Ověřený kontakt
+                  </span>
+                  <span className={contactDemands(activeDetail).length ? "done" : ""}>
+                    {contactDemands(activeDetail).length ? <Check size={14} /> : <CircleAlert size={14} />}
+                    Vazba na poptávku
+                  </span>
+                </div>
+                {contactDuplicateSignals(activeDetail).length > 0 && (
+                  <div className="duplicate-check">
+                    <CircleAlert size={16} />
+                    <div>
+                      <b>Možná duplicita kontaktu</b>
+                      <span>{contactDuplicateSignals(activeDetail).map((item) => item.name).join(", ")}</span>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
             <div className="form-grid">
               {[
                 ["name", "Jméno a příjmení"],
                 ["company", "Firma"],
                 ["role", "Pracovní role"],
                 ["email", "Služební e-mail"],
+                ["secondaryEmail", "2. e-mail"],
                 ["phone", "Služební telefon"],
+                ["secondaryPhone", "2. telefon"],
                 ["source", "Zdroj"],
               ].map(([key, label]) => (
                 <label key={key}>
@@ -2083,6 +4217,17 @@ function Contacts({
             )}
             {activeDetail && (
               <article className="crm-list">
+                <h3>Obchodní aktivity</h3>
+                {contactActivities(activeDetail).length === 0 ? (
+                  <div className="empty-state">Kontakt zatím nemá zapsanou aktivitu.</div>
+                ) : (
+                  contactActivities(activeDetail).map((activity) => (
+                    <button type="button" key={activity.id}>
+                      <b>{activity.subject}</b>
+                      <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
+                    </button>
+                  ))
+                )}
                 <h3>Navázané poptávky</h3>
                 {contactDemands(activeDetail).length === 0 ? (
                   <div className="empty-state">Kontakt zatím nemá navázanou poptávku.</div>
@@ -2104,10 +4249,19 @@ function Contacts({
               <button
                 type="button"
                 className="secondary"
-                onClick={() => { setOpen(false); setDetail(null); }}
+                onClick={() => activeDetail ? openActivityForContact(activeDetail) : setOpen(false)}
               >
-                Zavřít
+                {activeDetail ? "Přidat aktivitu" : "Zavřít"}
               </button>
+              {activeDetail && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => saveContactEmailActivity(activeDetail)}
+                >
+                  Připravit e-mail
+                </button>
+              )}
               <button type="submit" className="primary">
                 {form.id ? "Uložit změny" : "Založit kartu"}
               </button>
@@ -2150,10 +4304,36 @@ function Contacts({
                   <small>poptávek</small>
                 </div>
                 <div>
-                  <b>{companyDetail.opportunitiesCount || 0}</b>
+                  <b>{companyOpportunities(companyDetail).length || companyDetail.opportunitiesCount || 0}</b>
                   <small>příležitostí</small>
                 </div>
               </div>
+            )}
+            {companyDetail && (
+              <section className="sales-intel-card company-intel-card">
+                <div>
+                  <span>FIREMNÍ SKÓRE</span>
+                  <strong>{companyHealth(companyDetail).bestScore}%</strong>
+                  <b>{companyHealth(companyDetail).recommended}</b>
+                </div>
+                <article>
+                  <h3>Doporučení</h3>
+                  <p>{companyHealth(companyDetail).recommended}</p>
+                  <small>
+                    {companyContacts(companyDetail).length} kontaktů, {companyDemands(companyDetail).length} poptávek, {companyOpportunities(companyDetail).length || companyDetail.opportunitiesCount || 0} příležitostí.
+                  </small>
+                </article>
+                <article>
+                  <h3>Rizika evidence</h3>
+                  <ul>
+                    {companyContacts(companyDetail).length === 0 && <li>Firma nemá žádný kontakt.</li>}
+                    {companyHealth(companyDetail).missingNextStep && <li>Firma nemá nastavený další krok.</li>}
+                    {companyDuplicateSignals(companyDetail).length > 0 && <li>Existuje možná duplicita firmy.</li>}
+                    {companyDetail.doNotContact && <li>Firma je označená jako neoslovovat.</li>}
+                    {companyContacts(companyDetail).length > 0 && !companyHealth(companyDetail).missingNextStep && companyDuplicateSignals(companyDetail).length === 0 && !companyDetail.doNotContact && <li>Evidence je v pořádku.</li>}
+                  </ul>
+                </article>
+              </section>
             )}
             <div className="form-grid">
               {[
@@ -2162,11 +4342,19 @@ function Contacts({
                 ["website", "Web"],
                 ["sector", "Sektor"],
                 ["source", "Zdroj"],
+                ["priority", "Priorita"],
+                ["size", "Velikost firmy"],
+                ["relationshipStatus", "Stav vztahu"],
+                ["ownerName", "Vlastník v týmu"],
+                ["decisionMaker", "Decision maker"],
+                ["nextStep", "Další krok"],
+                ["nextStepDueAt", "Termín dalšího kroku"],
               ].map(([key, label]) => (
                 <label key={key}>
                   {label}
                   <input
-                    value={companyForm[key as keyof typeof companyForm]}
+                    type={key === "nextStepDueAt" ? "datetime-local" : "text"}
+                    value={companyForm[key as keyof typeof companyForm] as string}
                     onChange={(e) =>
                       setCompanyForm({ ...companyForm, [key]: e.target.value })
                     }
@@ -2174,26 +4362,76 @@ function Contacts({
                   />
                 </label>
               ))}
+              <label>
+                Poznámka obchodníka
+                <textarea
+                  value={companyForm.note}
+                  onChange={(e) => setCompanyForm({ ...companyForm, note: e.target.value })}
+                />
+              </label>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={companyForm.doNotContact}
+                  onChange={(e) => setCompanyForm({ ...companyForm, doNotContact: e.target.checked })}
+                />
+                Neoslovovat
+              </label>
             </div>
             {companyDetail && (
               <article className="crm-list">
-                <h3>Kontakty firmy</h3>
-                {companyContacts(companyDetail).length === 0 ? (
-                  <div className="empty-state">Firma zatím nemá navázaný kontakt.</div>
+                <h3>Obchodní aktivity firmy</h3>
+                {companyDuplicateSignals(companyDetail).length > 0 && (
+                  <div className="duplicate-check">
+                    <CircleAlert size={16} />
+                    <div>
+                      <b>Možná duplicita firmy</b>
+                      <span>{companyDuplicateSignals(companyDetail).map((company) => company.name).join(", ")}</span>
+                    </div>
+                  </div>
+                )}
+                {companyActivities(companyDetail).length === 0 ? (
+                  <div className="empty-state">Firma zatím nemá zapsanou aktivitu.</div>
                 ) : (
-                  companyContacts(companyDetail).map((contact) => (
-                    <button
-                      type="button"
-                      key={contact.id}
-                      onClick={() => {
-                        setCompanyDetail(null);
-                        openDetail(contact);
-                      }}
-                    >
-                      <b>{contact.name}</b>
-                      <small>{contact.role} · {contact.email}</small>
+                  companyActivities(companyDetail).map((activity) => (
+                    <button type="button" key={activity.id}>
+                      <b>{activity.subject}</b>
+                      <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
                     </button>
                   ))
+                )}
+                <h3>Kontakty firmy</h3>
+                {companyContacts(companyDetail).length === 0 ? (
+                  <div className="empty-state">
+                    Firma zatím nemá navázaný kontakt.
+                    <button
+                      className="inline-cta"
+                      type="button"
+                      onClick={() => openCreateForCompany(companyDetail)}
+                    >
+                      Přidat kontakt k firmě
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {companyContacts(companyDetail).map((contact) => (
+                      <button
+                        type="button"
+                        key={contact.id}
+                        onClick={() => {
+                          setCompanyDetail(null);
+                          openDetail(contact);
+                        }}
+                      >
+                        <b>{contact.name}</b>
+                        <small>{contact.role} · {contact.email}</small>
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => openCreateForCompany(companyDetail)}>
+                      <b>Přidat další kontakt</b>
+                      <small>{companyDetail.name}</small>
+                    </button>
+                  </>
                 )}
                 <h3>Poptávky firmy</h3>
                 {companyDemands(companyDetail).length === 0 ? (
@@ -2210,21 +4448,124 @@ function Contacts({
                   <b>Otevřít všechny poptávky firmy</b>
                   <small>{companyForm.name}</small>
                 </button>
+                <h3>Obchodní příležitosti firmy</h3>
+                {companyOpportunities(companyDetail).length === 0 ? (
+                  <div className="empty-state">Firma zatím nemá obchodní případ v Pipeline.</div>
+                ) : (
+                  companyOpportunities(companyDetail).map((opportunity) => (
+                    <button
+                      type="button"
+                      key={opportunity.id}
+                      onClick={() => openOpportunity(opportunity.id)}
+                    >
+                      <b>{opportunity.title}</b>
+                      <small>
+                        {opportunity.stage} · {opportunity.probability} % · {opportunity.source || "Zdroj neuveden"}
+                      </small>
+                    </button>
+                  ))
+                )}
               </article>
             )}
             <footer>
               <button
                 type="button"
                 className="secondary"
-                onClick={() => {
-                  setCompanyOpen(false);
-                  setCompanyDetail(null);
-                }}
+                onClick={() => companyDetail ? openActivityForCompany(companyDetail) : setCompanyOpen(false)}
               >
-                Zavřít
+                {companyDetail ? "Přidat aktivitu" : "Zavřít"}
               </button>
               <button type="submit" className="primary">
                 {companyForm.id ? "Uložit firmu" : "Založit firmu"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
+      {activityOpen && (
+        <div className="modal-backdrop">
+          <form
+            className="modal crm-detail"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveActivity();
+            }}
+          >
+            <header>
+              <div>
+                <p>OBCHODNÍ AKTIVITA</p>
+                <h2>Zápis komunikace a další krok</h2>
+              </div>
+              <button type="button" onClick={() => setActivityOpen(false)}>
+                ×
+              </button>
+            </header>
+            <div className="form-grid">
+              <label>
+                Typ aktivity
+                <select
+                  value={activityForm.type}
+                  onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value })}
+                >
+                  <option value="call">Telefonát</option>
+                  <option value="email">E-mail</option>
+                  <option value="linkedin">LinkedIn zpráva</option>
+                  <option value="meeting">Schůzka</option>
+                  <option value="note">Poznámka</option>
+                  <option value="follow-up">Follow-up</option>
+                </select>
+              </label>
+              <label>
+                Předmět
+                <input
+                  value={activityForm.subject}
+                  onChange={(e) => setActivityForm({ ...activityForm, subject: e.target.value })}
+                />
+              </label>
+              <label>
+                Datum aktivity
+                <input
+                  type="datetime-local"
+                  value={activityForm.occurredAt}
+                  onChange={(e) => setActivityForm({ ...activityForm, occurredAt: e.target.value })}
+                />
+              </label>
+              <label>
+                Další krok
+                <select
+                  value={activityForm.nextStep}
+                  onChange={(e) => setActivityForm({ ...activityForm, nextStep: e.target.value })}
+                >
+                  <option value="">Bez dalšího kroku</option>
+                  <option value="Zavolat kontaktu">Zavolat kontaktu</option>
+                  <option value="Poslat úvodní e-mail">Poslat úvodní e-mail</option>
+                  <option value="Domluvit discovery call">Domluvit discovery call</option>
+                  <option value="Připravit nabídku">Připravit nabídku</option>
+                  <option value="Follow-up po nabídce">Follow-up po nabídce</option>
+                </select>
+              </label>
+              <label>
+                Termín dalšího kroku
+                <input
+                  type="datetime-local"
+                  value={activityForm.nextStepDueAt}
+                  onChange={(e) => setActivityForm({ ...activityForm, nextStepDueAt: e.target.value })}
+                />
+              </label>
+              <label>
+                Poznámka
+                <textarea
+                  value={activityForm.note}
+                  onChange={(e) => setActivityForm({ ...activityForm, note: e.target.value })}
+                />
+              </label>
+            </div>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setActivityOpen(false)}>
+                Zavřít
+              </button>
+              <button type="submit" className="primary">
+                Uložit aktivitu
               </button>
             </footer>
           </form>
@@ -2326,7 +4667,7 @@ function Pool({ note }: { note: (s: string) => void }) {
       {open && (
         <div className="modal-backdrop">
           <form
-            className="modal"
+            className="modal crm-detail"
             onSubmit={(e) => {
               e.preventDefault();
               save();
@@ -2393,6 +4734,12 @@ function Pipeline({ note }: { note: (s: string) => void }) {
         id: string;
         title: string;
         company: string | null;
+        companyId: string | null;
+        contactId: string | null;
+        contactFirstName: string | null;
+        contactLastName: string | null;
+        demandId: string | null;
+        demandTitle: string | null;
         stage: string;
         valueCzk: number | null;
         probability: number;
@@ -2400,11 +4747,17 @@ function Pipeline({ note }: { note: (s: string) => void }) {
         nextStep: string | null;
         note: string | null;
         source: string | null;
+        updatedAt: string | null;
       }[]
     >([]),
     [open, setOpen] = useState(false),
     [selected, setSelected] = useState<any>(null),
     [dragged, setDragged] = useState<string | null>(null),
+    [pipelineQuery, setPipelineQuery] = useState(""),
+    [pipelineSource, setPipelineSource] = useState("vše"),
+    [minProbability, setMinProbability] = useState("0"),
+    [nextStepFilter, setNextStepFilter] = useState("vše"),
+    [pipelineArchiveFilter, setPipelineArchiveFilter] = useState("aktivní"),
     [form, setForm] = useState({
       title: "",
       company: "",
@@ -2421,11 +4774,38 @@ function Pipeline({ note }: { note: (s: string) => void }) {
         : "",
       nextStepDueAt: "",
     });
+  const openPipelineCompany = () => {
+    if (!selected?.companyId && !selected?.company) {
+      note("Případ nemá navázanou firmu.");
+      return;
+    }
+    window.localStorage.setItem("neovia-open-company", selected.companyId || selected.company);
+    setSelected(null);
+    goTo("Kontakty");
+  };
+  const openPipelineDemand = () => {
+    if (!selected?.demandId) {
+      note("Případ nemá navázanou původní poptávku.");
+      return;
+    }
+    window.localStorage.setItem("neovia-open-demand", selected.demandId);
+    setSelected(null);
+    goTo("Poptávky");
+  };
+  const openPipelineTasks = () => {
+    setSelected(null);
+    goTo("Úkoly");
+  };
   const load = () =>
-    fetch("/api/opportunities")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data) => {
+    Promise.all([
+      fetch("/api/opportunities").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/activities").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/tasks").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([data, activityRows, taskRows]) => {
         setRows(data);
+        setOpportunityActivities(activityRows);
+        setOpportunityTasks(taskRows);
         const requested = window.localStorage.getItem("neovia-open-opportunity");
         if (requested) {
           const item = data.find((x: (typeof rows)[number]) => x.id === requested);
@@ -2438,6 +4818,81 @@ function Pipeline({ note }: { note: (s: string) => void }) {
   useEffect(() => {
     load();
   }, []);
+  const [opportunityActivities, setOpportunityActivities] = useState<ActivityRecord[]>([]);
+  const [opportunityTasks, setOpportunityTasks] = useState<TaskRecord[]>([]);
+  const emptyActivityForm = {
+    type: "call",
+    subject: "",
+    note: "",
+    occurredAt: "",
+    nextStep: "",
+    nextStepDueAt: "",
+    priority: "2",
+  };
+  const [activityForm, setActivityForm] = useState(emptyActivityForm);
+  const todayKey = localDateKey(new Date());
+  const sources = [...new Set(rows.map((x) => x.source || "Zdroj neuveden"))].sort();
+  const openOpportunityTasks = opportunityTasks.filter((task) => task.status !== "done");
+  const stageLabel = (stage: string) =>
+    ({
+      identified: "Identifikace",
+      qualified: "Kvalifikace",
+      contacted: "Kontaktováno",
+      discovery: "Discovery",
+      solution: "Řešení",
+      proposal: "Nabídka",
+      negotiation: "Vyjednávání",
+      contract: "Kontrakt",
+      won: "Vyhráno",
+      lost: "LOST",
+    })[stage] || stage;
+  const filteredRows = rows.filter((item) => {
+    const text = `${item.title} ${item.company || ""} ${item.source || ""} ${item.note || ""}`.toLowerCase();
+    const tasksForItem = openOpportunityTasks.filter((task) => task.opportunityId === item.id);
+    const hasNextStep = Boolean(item.nextStep || tasksForItem.length);
+    const hasOverdueTask = tasksForItem.some((task) => {
+      const due = task.dueAt ? new Date(task.dueAt) : null;
+      return due && localDateKey(due) < todayKey;
+    });
+    return (
+      text.includes(pipelineQuery.toLowerCase()) &&
+      (pipelineArchiveFilter === "vše" ||
+        (pipelineArchiveFilter === "aktivní" && item.stage !== "lost") ||
+        (pipelineArchiveFilter === "lost" && item.stage === "lost")) &&
+      (pipelineSource === "vše" || (item.source || "Zdroj neuveden") === pipelineSource) &&
+      Number(item.probability || 0) >= Number(minProbability || 0) &&
+      (nextStepFilter === "vše" ||
+        (nextStepFilter === "má další krok" && hasNextStep) ||
+        (nextStepFilter === "bez dalšího kroku" && !hasNextStep) ||
+        (nextStepFilter === "po termínu" && hasOverdueTask))
+    );
+  });
+  const weightedPipelineValue = filteredRows.reduce(
+    (sum, item) => sum + Math.round(Number(item.valueCzk || 0) * (Number(item.probability || 0) / 100)),
+    0,
+  );
+  const exportPipeline = () => {
+    const rowsForExport = [
+      "Případ;Firma;Fáze;Zdroj;Hodnota Kč;Pravděpodobnost;Vážená hodnota;Očekávané uzavření;Další krok",
+      ...filteredRows.map((item) =>
+        [
+          item.title,
+          item.company || "",
+          stageLabel(item.stage),
+          item.source || "",
+          String(item.valueCzk || ""),
+          `${item.probability || 0}%`,
+          String(Math.round(Number(item.valueCzk || 0) * (Number(item.probability || 0) / 100))),
+          item.expectedCloseDate ? new Date(item.expectedCloseDate).toLocaleDateString("cs-CZ") : "",
+          item.nextStep || "",
+        ]
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(";"),
+      ),
+    ];
+    downloadCsv(rowsForExport, "neovia-pipeline.csv");
+    note(`Exportováno ${filteredRows.length} obchodních případů.`);
+  };
   const save = async () => {
     const r = await fetch("/api/opportunities", {
       method: "POST",
@@ -2481,6 +4936,33 @@ function Pipeline({ note }: { note: (s: string) => void }) {
     }
     note(`Případ přesunut do fáze ${cols.find((x) => x[1] === stage)?.[0]}.`);
   };
+  const markSelectedLost = async () => {
+    if (!selected) return;
+    const confirmed = window.confirm(
+      "Opravdu chcete označit tento obchodní případ jako LOST? Přesune se do archivu LOST a v běžné Pipeline se nebude zobrazovat.",
+    );
+    if (!confirmed) return;
+    const r = await fetch("/api/opportunities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: selected.id,
+        stage: "lost",
+        probability: 0,
+        nextStep: selected.nextStep || "Uzavřeno jako LOST",
+        note: selected.note,
+        source: selected.source,
+      }),
+    });
+    if (!r.ok) {
+      note("Případ se nepodařilo označit jako LOST.");
+      return;
+    }
+    setSelected(null);
+    setPipelineArchiveFilter("lost");
+    load();
+    note("Případ byl přesunut do archivu LOST.");
+  };
   const saveDetail = async () => {
     const r = await fetch("/api/opportunities", {
       method: "PATCH",
@@ -2515,6 +4997,40 @@ function Pipeline({ note }: { note: (s: string) => void }) {
         : "Obchodní případ byl aktualizován.",
     );
   };
+  const relatedActivities = selected
+    ? opportunityActivities.filter((activity) => activity.opportunityId === selected.id)
+    : [];
+  const relatedTasks = selected
+    ? opportunityTasks.filter((task) => task.opportunityId === selected.id)
+    : [];
+  const saveOpportunityActivity = async () => {
+    if (!selected) return;
+    if (!activityForm.subject.trim()) {
+      note("Doplňte předmět aktivity.");
+      return;
+    }
+    const response = await fetch("/api/activities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...activityForm,
+        opportunityId: selected.id,
+        companyId: selected.companyId || null,
+      }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Aktivitu se nepodařilo uložit.");
+      return;
+    }
+    setActivityForm(emptyActivityForm);
+    load();
+    note(
+      activityForm.nextStep && activityForm.nextStepDueAt
+        ? "Aktivita byla uložena a další krok je v úkolech."
+        : "Aktivita byla uložena k obchodnímu případu.",
+    );
+  };
   const cols: [string, string][] = [
     ["Identifikace", "identified"],
     ["Kvalifikace", "qualified"],
@@ -2531,6 +5047,108 @@ function Pipeline({ note }: { note: (s: string) => void }) {
         note={note}
         onAction={() => setOpen(true)}
       />
+      <div className="toolbar pipeline-toolbar">
+        <label>
+          <Search size={17} />
+          <input
+            value={pipelineQuery}
+            onChange={(e) => setPipelineQuery(e.target.value)}
+            placeholder="Hledat firmu, příležitost, zdroj nebo poznámku"
+          />
+          {pipelineQuery && (
+            <button
+              className="search-clear"
+              type="button"
+              onClick={() => setPipelineQuery("")}
+              aria-label="Vyčistit vyhledávání"
+            >
+              ×
+            </button>
+          )}
+        </label>
+        <select value={pipelineSource} onChange={(e) => setPipelineSource(e.target.value)}>
+          <option value="vše">Všechny zdroje</option>
+          {sources.map((source) => (
+            <option key={source}>{source}</option>
+          ))}
+        </select>
+        <select value={minProbability} onChange={(e) => setMinProbability(e.target.value)}>
+          <option value="0">Všechny šance</option>
+          <option value="30">30 % a více</option>
+          <option value="50">50 % a více</option>
+          <option value="70">70 % a více</option>
+        </select>
+        <select value={nextStepFilter} onChange={(e) => setNextStepFilter(e.target.value)}>
+          <option value="vše">Všechny kroky</option>
+          <option value="má další krok">Má další krok</option>
+          <option value="bez dalšího kroku">Bez dalšího kroku</option>
+          <option value="po termínu">Po termínu</option>
+        </select>
+        <select value={pipelineArchiveFilter} onChange={(e) => setPipelineArchiveFilter(e.target.value)}>
+          <option value="aktivní">Jen aktivní Pipeline</option>
+          <option value="lost">Archiv LOST</option>
+          <option value="vše">Aktivní i LOST</option>
+        </select>
+        <button onClick={exportPipeline}>
+          <FileBarChart size={16} />
+          Export
+        </button>
+      </div>
+      <div className="pipeline-summary">
+        <article>
+          <b>{filteredRows.length}</b>
+          <small>případů ve výběru</small>
+        </article>
+        <article>
+          <b>{filteredRows.reduce((sum, item) => sum + Number(item.valueCzk || 0), 0).toLocaleString("cs-CZ")} Kč</b>
+          <small>nominální hodnota</small>
+        </article>
+        <article>
+          <b>{weightedPipelineValue.toLocaleString("cs-CZ")} Kč</b>
+          <small>vážená hodnota</small>
+        </article>
+        <article className={filteredRows.some((item) => openOpportunityTasks.some((task) => task.opportunityId === item.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey)) ? "warn" : ""}>
+          <b>
+            {
+              filteredRows.filter((item) =>
+                openOpportunityTasks.some((task) => task.opportunityId === item.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey),
+              ).length
+            }
+          </b>
+          <small>případů po termínu</small>
+        </article>
+        <article className="warn">
+          <b>{rows.filter((item) => item.stage === "lost").length}</b>
+          <small>LOST archiv</small>
+        </article>
+      </div>
+      {pipelineArchiveFilter !== "aktivní" && (
+        <section className="panel lost-archive">
+          <header>
+            <div>
+              <b>Archiv LOST</b>
+              <small>Ztracené obchodní případy zůstávají v reportech a exportech.</small>
+            </div>
+            <span>{filteredRows.filter((item) => item.stage === "lost").length}</span>
+          </header>
+          {filteredRows.filter((item) => item.stage === "lost").length === 0 ? (
+            <div className="empty-state">V tomto filtru není žádný LOST případ.</div>
+          ) : (
+            filteredRows
+              .filter((item) => item.stage === "lost")
+              .map((item) => (
+                <button className="archive-row" type="button" key={item.id} onClick={() => openDetail(item)}>
+                  <span>
+                    <b>{item.company || "Firma"}</b>
+                    <small>{item.title}</small>
+                  </span>
+                  <span>{item.source || "Zdroj neuveden"}</span>
+                  <span>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("cs-CZ") : "bez data"}</span>
+                </button>
+              ))
+          )}
+        </section>
+      )}
       <div className="pipeline">
         {cols.map(([label, stage]) => (
           <section
@@ -2541,9 +5159,9 @@ function Pipeline({ note }: { note: (s: string) => void }) {
           >
             <header>
               <b>{label}</b>
-              <span>{rows.filter((x) => x.stage === stage).length}</span>
+              <span>{filteredRows.filter((x) => x.stage === stage).length}</span>
             </header>
-            {rows
+            {filteredRows
               .filter((x) => x.stage === stage)
               .map((x) => (
                 <article
@@ -2558,6 +5176,12 @@ function Pipeline({ note }: { note: (s: string) => void }) {
                   <h3>{x.company || "Firma"}</h3>
                   <p>{x.title}</p>
                   <span className="source-tag">{x.source || "Zdroj neuveden"}</span>
+                  {!x.nextStep && !openOpportunityTasks.some((task) => task.opportunityId === x.id) && (
+                    <span className="pipeline-warning">bez dalšího kroku</span>
+                  )}
+                  {openOpportunityTasks.some((task) => task.opportunityId === x.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey) && (
+                    <span className="pipeline-warning">po termínu</span>
+                  )}
                   <footer>
                     <b>
                       {x.valueCzk
@@ -2568,6 +5192,9 @@ function Pipeline({ note }: { note: (s: string) => void }) {
                   </footer>
                 </article>
               ))}
+            {filteredRows.filter((x) => x.stage === stage).length === 0 && (
+              <div className="pipeline-empty">V tomto filtru není žádný případ.</div>
+            )}
             <button
               onClick={() => {
                 setForm({ ...form, stage });
@@ -2632,7 +5259,7 @@ function Pipeline({ note }: { note: (s: string) => void }) {
       {selected && (
         <div className="modal-backdrop">
           <form
-            className="modal"
+            className="modal crm-detail pipeline-detail-modal"
             onSubmit={(e) => {
               e.preventDefault();
               saveDetail();
@@ -2647,86 +5274,218 @@ function Pipeline({ note }: { note: (s: string) => void }) {
                 ×
               </button>
             </header>
-            <div className="form-grid">
-              <label>
-                Hodnota Kč
-                <input
-                  type="number"
-                  value={selected.valueCzk || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, valueCzk: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Pravděpodobnost %
-                <input
-                  type="number"
-                  value={selected.probability || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, probability: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Očekávané uzavření
-                <input
-                  type="date"
-                  value={selected.expectedCloseDate || ""}
-                  onChange={(e) =>
-                    setSelected({
-                      ...selected,
-                      expectedCloseDate: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Zdroj
-                <input
-                  value={selected.source || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, source: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Další krok
-                <select
-                  value={selected.nextStep || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, nextStep: e.target.value })
-                  }
-                >
-                  <option value="">Vyberte další krok</option>
-                  {nextStepOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Termín dalšího kroku
-                <input
-                  type="datetime-local"
-                  value={selected.nextStepDueAt || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, nextStepDueAt: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Poznámka z jednání
-                <textarea
-                  value={selected.note || ""}
-                  onChange={(e) =>
-                    setSelected({ ...selected, note: e.target.value })
-                  }
-                />
-              </label>
+            <div className="modal-scroll">
+              <section className="relation-strip">
+                <button type="button" onClick={openPipelineCompany}>
+                  <b>{selected.company || "Firma není navázaná"}</b>
+                  <small>Otevřít firemní kartu</small>
+                </button>
+                <button type="button" onClick={openPipelineDemand} disabled={!selected.demandId}>
+                  <b>{selected.demandTitle || "Poptávka není navázaná"}</b>
+                  <small>Otevřít původní poptávku</small>
+                </button>
+                <button type="button" onClick={openPipelineTasks}>
+                  <b>{relatedTasks.length}</b>
+                  <small>Navázané úkoly</small>
+                </button>
+                <button type="button" onClick={() => note(selected.contactId ? "Detail kontaktu otevřu v dalším kroku přes CRM kartu firmy." : "Kontakt zatím není navázaný.")}>
+                  <b>
+                    {[selected.contactFirstName, selected.contactLastName].filter(Boolean).join(" ") ||
+                      "Kontakt není navázaný"}
+                  </b>
+                  <small>Kontaktní vazba</small>
+                </button>
+              </section>
+              <div className="form-grid">
+                <label>
+                  Hodnota Kč
+                  <input
+                    type="number"
+                    value={selected.valueCzk || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, valueCzk: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Pravděpodobnost %
+                  <input
+                    type="number"
+                    value={selected.probability || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, probability: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Očekávané uzavření
+                  <input
+                    type="date"
+                    value={selected.expectedCloseDate || ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        expectedCloseDate: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Zdroj
+                  <input
+                    value={selected.source || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, source: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Další krok
+                  <select
+                    value={selected.nextStep || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, nextStep: e.target.value })
+                    }
+                  >
+                    <option value="">Vyberte další krok</option>
+                    {nextStepOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Termín dalšího kroku
+                  <input
+                    type="datetime-local"
+                    value={selected.nextStepDueAt || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, nextStepDueAt: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Poznámka z jednání
+                  <textarea
+                    value={selected.note || ""}
+                    onChange={(e) =>
+                      setSelected({ ...selected, note: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              <section className="detail-section">
+              <h3>Navázané úkoly</h3>
+              {relatedTasks.length === 0 ? (
+                <div className="empty-state">K tomuto případu zatím není žádný úkol.</div>
+              ) : (
+                relatedTasks.slice(0, 5).map((task) => (
+                  <div className={task.status === "done" ? "timeline-item done" : "timeline-item"} key={task.id}>
+                    <b>{task.title}</b>
+                    <small>
+                      {task.dueAt ? new Date(task.dueAt).toLocaleString("cs-CZ") : "Bez termínu"} · priorita {task.priority}
+                    </small>
+                  </div>
+                ))
+              )}
+            </section>
+              <section className="detail-section">
+              <h3>Časová osa aktivit</h3>
+              {relatedActivities.length === 0 ? (
+                <div className="empty-state">
+                  Zatím není zapsaná komunikace k tomuto obchodnímu případu.
+                </div>
+              ) : (
+                relatedActivities.slice(0, 6).map((activity) => (
+                  <div className="timeline-item" key={activity.id}>
+                    <b>{activity.subject}</b>
+                    <small>
+                      {activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}
+                    </small>
+                    {activity.note && <p>{activity.note}</p>}
+                  </div>
+                ))
+              )}
+            </section>
+              <section className="detail-section">
+              <h3>Zapsat aktivitu</h3>
+              <div className="form-grid">
+                <label>
+                  Typ
+                  <select
+                    value={activityForm.type}
+                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value })}
+                  >
+                    <option value="call">Telefonát</option>
+                    <option value="email">E-mail</option>
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="meeting">Schůzka</option>
+                    <option value="note">Poznámka</option>
+                    <option value="follow-up">Follow-up</option>
+                  </select>
+                </label>
+                <label>
+                  Předmět
+                  <input
+                    value={activityForm.subject}
+                    onChange={(e) => setActivityForm({ ...activityForm, subject: e.target.value })}
+                    placeholder="Například volal jsem s nákupem"
+                  />
+                </label>
+                <label>
+                  Datum aktivity
+                  <input
+                    type="datetime-local"
+                    value={activityForm.occurredAt}
+                    onChange={(e) => setActivityForm({ ...activityForm, occurredAt: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Další krok
+                  <select
+                    value={activityForm.nextStep}
+                    onChange={(e) => setActivityForm({ ...activityForm, nextStep: e.target.value })}
+                  >
+                    <option value="">Bez dalšího kroku</option>
+                    {nextStepOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Termín dalšího kroku
+                  <input
+                    type="datetime-local"
+                    value={activityForm.nextStepDueAt}
+                    onChange={(e) => setActivityForm({ ...activityForm, nextStepDueAt: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Poznámka
+                  <textarea
+                    value={activityForm.note}
+                    onChange={(e) => setActivityForm({ ...activityForm, note: e.target.value })}
+                  />
+                </label>
+              </div>
+              <button className="secondary detail-action" type="button" onClick={saveOpportunityActivity}>
+                Zapsat aktivitu k případu
+              </button>
+              </section>
             </div>
             <footer>
+              {selected.stage !== "lost" && (
+                <button
+                  type="button"
+                  className="danger-secondary"
+                  onClick={markSelectedLost}
+                >
+                  Označit jako LOST
+                </button>
+              )}
               <button
                 type="button"
                 className="secondary"
@@ -2742,31 +5501,87 @@ function Pipeline({ note }: { note: (s: string) => void }) {
     </>
   );
 }
-function Tasks({
-  done,
-  setDone,
-  note,
-}: {
-  done: number[];
-  setDone: (x: number[]) => void;
-  note: (s: string) => void;
-}) {
+function Tasks({ note }: { note: (s: string) => void }) {
   const [rows, setRows] = useState<TaskRecord[]>([]),
+    [companies, setCompanies] = useState<CompanyRecord[]>([]),
+    [contacts, setContacts] = useState<ContactRecord[]>([]),
     [loading, setLoading] = useState(true),
+    [taskFilter, setTaskFilter] = useState("open"),
     [open, setOpen] = useState(false),
+    [editing, setEditing] = useState<TaskRecord | null>(null),
+    [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null),
+    [calendarEvents, setCalendarEvents] = useState<CalendarEventRecord[]>([]),
+    [syncing, setSyncing] = useState(false),
+    [lastSyncSummary, setLastSyncSummary] = useState(""),
+    [calendarLoading, setCalendarLoading] = useState(false),
+    [calendarSyncingTask, setCalendarSyncingTask] = useState<string | null>(null),
     [title, setTitle] = useState(""),
+    [kind, setKind] = useState("task"),
+    [tag, setTag] = useState(""),
     [dueAt, setDueAt] = useState(""),
+    [priority, setPriority] = useState("2"),
+    [companyId, setCompanyId] = useState(""),
+    [companyQuery, setCompanyQuery] = useState(""),
+    [contactId, setContactId] = useState(""),
+    [contactQuery, setContactQuery] = useState(""),
     [saving, setSaving] = useState(false);
+  const loadCalendarStatus = () =>
+    fetch("/api/calendar/google/status")
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        setCalendarStatus(data);
+        return data as CalendarStatus;
+      })
+      .catch(() => {
+        setCalendarStatus(null);
+        return null;
+      });
+  const loadCalendarEvents = () => {
+    setCalendarLoading(true);
+    fetch("/api/calendar/google/events")
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        setCalendarEvents(data.events || []);
+      })
+      .catch(() => setCalendarEvents([]))
+      .finally(() => setCalendarLoading(false));
+  };
   const load = () =>
-    fetch("/api/tasks")
-      .then(async (r) => {
+    Promise.all([
+      fetch("/api/tasks").then(async (r) => {
         if (!r.ok) throw new Error();
-        setRows(await r.json());
+        return r.json();
+      }),
+      fetch("/api/companies").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/contacts").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([taskRows, companyRows, contactRows]) => {
+        setRows(taskRows);
+        setCompanies(companyRows);
+        setContacts(contactRows);
       })
       .catch(() => note("Úkoly se nepodařilo načíst."))
       .finally(() => setLoading(false));
   useEffect(() => {
     load();
+    loadCalendarStatus().then((status) => {
+      if (status?.connected) loadCalendarEvents();
+    });
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const calendarState = params.get("calendar");
+    if (calendarState === "connected") {
+      note("Google kalendář je připojený.");
+      loadCalendarStatus().then((status) => {
+        if (status?.connected) loadCalendarEvents();
+      });
+    }
+    if (calendarState === "error") {
+      note(`Google kalendář se nepodařilo připojit: ${params.get("reason") || "neznámá chyba"}.`);
+    }
   }, []);
   const save = async () => {
     if (!title.trim()) {
@@ -2775,9 +5590,18 @@ function Tasks({
     }
     setSaving(true);
     const response = await fetch("/api/tasks", {
-      method: "POST",
+      method: editing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, dueAt: dueAt || null }),
+      body: JSON.stringify({
+        id: editing?.id,
+        title,
+        kind,
+        tag: tag || null,
+        dueAt: dueAt || null,
+        priority,
+        companyId: companyId || null,
+        contactId: contactId || null,
+      }),
     });
     setSaving(false);
     if (!response.ok) {
@@ -2785,14 +5609,184 @@ function Tasks({
       return;
     }
     setOpen(false);
+    setEditing(null);
     setTitle("");
     setDueAt("");
+    setPriority("2");
+    setCompanyId("");
+    setCompanyQuery("");
+    setContactId("");
+    setContactQuery("");
+    setKind("task");
+    setTag("");
     load();
-    note("Úkol byl uložen do společné databáze.");
+    note(editing ? "Úkol byl upraven." : "Úkol byl uložen do společné databáze.");
+  };
+  const openTaskEditor = (task?: TaskRecord) => {
+    setEditing(task || null);
+    setTitle(task?.title || "");
+    setKind(task?.kind || "task");
+    setTag(task?.tag || "");
+    setDueAt(task?.dueAt ? task.dueAt.slice(0, 16) : "");
+    setPriority(String(task?.priority || 2));
+    setCompanyId(task?.companyId || "");
+    setCompanyQuery(task?.company || "");
+    setContactId(task?.contactId || "");
+    setContactQuery(task?.contactName || "");
+    setOpen(true);
+  };
+  const deleteTask = async (task: TaskRecord) => {
+    if (!window.confirm(`Opravdu chcete odstranit záznam „${task.title}“? Tato akce se provede až po potvrzení.`)) return;
+    const response = await fetch("/api/tasks", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.id }),
+    });
+    if (!response.ok) {
+      note("Záznam se nepodařilo odstranit.");
+      return;
+    }
+    setOpen(false);
+    setEditing(null);
+    load();
+    note("Záznam byl odstraněn.");
   };
   const openOpportunity = (opportunityId: string) => {
     window.localStorage.setItem("neovia-open-opportunity", opportunityId);
     goTo("Pipeline");
+  };
+  const openCompany = (company: string) => {
+    window.localStorage.setItem("neovia-open-company", company);
+    goTo("Kontakty");
+  };
+  const toggleTask = async (task: TaskRecord) => {
+    const nextStatus = task.status === "done" ? "open" : "done";
+    setRows(rows.map((x) => (x.id === task.id ? { ...x, status: nextStatus } : x)));
+    const response = await fetch("/api/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.id, status: nextStatus }),
+    });
+    if (!response.ok) {
+      load();
+      note("Stav úkolu se nepodařilo uložit.");
+      return;
+    }
+    note(nextStatus === "done" ? "Úkol byl dokončen." : "Úkol byl znovu otevřen.");
+  };
+  const todayKey = localDateKey(new Date());
+  const visibleTasks = rows.filter((task) => {
+    const dueDate = task.dueAt ? new Date(task.dueAt) : null;
+    if (taskFilter === "all") return true;
+    if (taskFilter === "done") return task.status === "done";
+    if (taskFilter === "today") return Boolean(dueDate && localDateKey(dueDate) === todayKey);
+    if (taskFilter === "overdue") return Boolean(dueDate && dueDate < new Date() && task.status !== "done");
+    return task.status !== "done";
+  });
+  const companyResults =
+    companyQuery.trim().length >= 3
+      ? companies
+          .filter((company) => company.name.toLowerCase().includes(companyQuery.trim().toLowerCase()))
+          .slice(0, 8)
+      : [];
+  const contactResults =
+    contactQuery.trim().length >= 3
+      ? contacts
+          .filter((contact) => {
+            const haystack = `${contact.firstName} ${contact.lastName} ${contact.email || ""} ${contact.phone || ""} ${contact.company || ""}`.toLowerCase();
+            const matchesText = haystack.includes(contactQuery.trim().toLowerCase());
+            const matchesCompany = !companyId || contact.companyId === companyId;
+            return matchesText && matchesCompany;
+          })
+          .slice(0, 8)
+      : [];
+  const timedVisibleTasks = visibleTasks
+    .filter((task) => task.dueAt)
+    .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime());
+  const exportCalendar = () => {
+    if (timedVisibleTasks.length === 0) {
+      note("V aktuálním filtru není žádný úkol s termínem pro export.");
+      return;
+    }
+    const now = formatIcsDate(new Date());
+    const events = timedVisibleTasks
+      .map((task) => {
+        const start = new Date(task.dueAt!);
+        const end = new Date(start.getTime() + 30 * 60 * 1000);
+        const description = [
+          task.company ? `Firma: ${task.company}` : "",
+          task.opportunityTitle ? `Obchodní případ: ${task.opportunityTitle}` : "",
+          `Priorita: ${task.priority}`,
+          `Stav: ${task.status === "done" ? "hotovo" : "otevřeno"}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        return [
+          "BEGIN:VEVENT",
+          `UID:${task.id}@neovia-demand-intelligence`,
+          `DTSTAMP:${now}`,
+          `DTSTART:${formatIcsDate(start)}`,
+          `DTEND:${formatIcsDate(end)}`,
+          `SUMMARY:${escapeIcs(task.title)}`,
+          `DESCRIPTION:${escapeIcs(description)}`,
+          "END:VEVENT",
+        ].join("\r\n");
+      })
+      .join("\r\n");
+    const calendar = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//NEOVIA//Demand Intelligence//CS",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      events,
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const blob = new Blob([calendar], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `neovia-ukoly-${todayKey}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    note(`Exportováno ${timedVisibleTasks.length} termínovaných úkolů do kalendáře.`);
+  };
+  const connectGoogleCalendar = () => {
+    if (!calendarStatus?.configured) {
+      note(`Chybí OAuth údaje pro Google kalendář: ${(calendarStatus?.missing || ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"]).join(", ")}.`);
+      return;
+    }
+    if (!calendarStatus.oauthUrl) {
+      note("Google Calendar OAuth adresa není připravená.");
+      return;
+    }
+    window.open(calendarStatus.oauthUrl, "_blank", "noopener,noreferrer");
+  };
+  const syncTaskToGoogleCalendar = async (task: TaskRecord) => {
+    if (!task.dueAt) {
+      note("Úkol nemá termín, nejde ho poslat do Google kalendáře.");
+      return;
+    }
+    if (!calendarStatus?.connected) {
+      note("Nejdřív připojte Google kalendář.");
+      return;
+    }
+    setCalendarSyncingTask(task.id);
+    const response = await fetch("/api/calendar/google/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskId: task.id }),
+    });
+    setCalendarSyncingTask(null);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Úkol se nepodařilo poslat do Google kalendáře.");
+      return;
+    }
+    loadCalendarEvents();
+    note("Úkol byl přidán do Google kalendáře.");
   };
   return (
     <>
@@ -2802,14 +5796,30 @@ function Tasks({
           <h1>Úkoly a kalendář</h1>
           <small>Další kroky obchodního týmu na jednom místě.</small>
         </div>
-        <button className="primary" onClick={() => setOpen(true)}>
+        <button className="primary" onClick={() => openTaskEditor()}>
           <Plus size={17} />
           Nový úkol
         </button>
       </div>
       <div className="task-grid">
         <section className="panel">
-          <Header title="Moje úkoly" action="Dnes" />
+          <Header title="Moje úkoly" action={`${visibleTasks.length} z ${rows.length}`} />
+          <div className="task-toolbar">
+            <label>
+              Zobrazení
+              <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
+                <option value="open">Otevřené</option>
+                <option value="today">Dnes</option>
+                <option value="overdue">Po termínu</option>
+                <option value="done">Hotové</option>
+                <option value="all">Vše</option>
+              </select>
+            </label>
+            <button type="button" className="secondary" onClick={exportCalendar}>
+              <CalendarDays size={15} />
+              Export .ics
+            </button>
+          </div>
           {loading ? (
             <div className="empty-state">
               Načítám úkoly ze společné databáze…
@@ -2818,32 +5828,37 @@ function Tasks({
             <div className="empty-state">
               Zatím nemáte žádný úkol. Vytvořte první další krok.
             </div>
+          ) : visibleTasks.length === 0 ? (
+            <div className="empty-state">
+              V tomto filtru teď není žádný úkol.
+            </div>
           ) : (
-            rows.map((task, i) => (
+            visibleTasks.map((task) => (
               <div
-                className={done.includes(i) ? "task done" : "task"}
+                className={task.status === "done" ? "task done" : "task"}
                 key={task.id}
               >
-                <button
-                  onClick={() =>
-                    setDone(
-                      done.includes(i)
-                        ? done.filter((x) => x !== i)
-                        : [...done, i],
-                    )
-                  }
-                >
-                  {done.includes(i) && <Check size={14} />}
+                <button onClick={() => toggleTask(task)}>
+                  {task.status === "done" && <Check size={14} />}
                 </button>
                 <div>
-                  <b>{task.title}</b>
+                  <button className="link-action task-title-action" type="button" onClick={() => openTaskEditor(task)}>
+                    {task.title}
+                  </button>
                   <small>
                     {task.dueAt
                       ? new Date(task.dueAt).toLocaleString("cs-CZ")
                       : "Bez termínu"}{" "}
                     · Priorita {task.priority}
                     {task.company ? ` · ${task.company}` : ""}
+                    {task.contactName ? ` · ${task.contactName}` : ""}
                   </small>
+                  <div className="inline-tags">
+                    {task.kind && (
+                      <span>{task.kind === "meeting" ? "Schůzka" : task.kind === "note" ? "Poznámka" : "Úkol"}</span>
+                    )}
+                    {task.tag && <span>{task.tag}</span>}
+                  </div>
                   {task.opportunityId && (
                     <button
                       className="link-action"
@@ -2853,16 +5868,57 @@ function Tasks({
                       Otevřít obchodní kartu
                     </button>
                   )}
+                  {!task.opportunityId && task.company && (
+                    <button
+                      className="link-action"
+                      type="button"
+                      onClick={() => openCompany(task.company!)}
+                    >
+                      Otevřít firmu
+                    </button>
+                  )}
+                  {task.dueAt && (
+                    <button
+                      className="link-action"
+                      type="button"
+                      disabled={calendarSyncingTask === task.id}
+                      onClick={() => syncTaskToGoogleCalendar(task)}
+                    >
+                      {calendarSyncingTask === task.id ? "Posílám do kalendáře…" : "Přidat do Google kalendáře"}
+                    </button>
+                  )}
                 </div>
-                <span className="avatar soft">LH</span>
+                <div className="task-actions">
+                  <button
+                    type="button"
+                    className="icon danger"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteTask(task);
+                    }}
+                    aria-label="Odstranit záznam"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                  <span className="avatar soft">LH</span>
+                </div>
               </div>
             ))
           )}
         </section>
         <section className="panel">
           <Header title="Dnešní agenda" action="Kalendář" />
-          {rows
-            .filter((x) => x.dueAt)
+          <div className={calendarStatus?.connected ? "email-setup-warning connected" : "email-setup-warning"}>
+            <b>{calendarStatus?.connected ? "Google kalendář je připojený" : "Google kalendář zatím není připojený"}</b>
+            <small>
+              {calendarStatus?.connected
+                ? `${calendarStatus.account}${calendarStatus.lastSyncAt ? ` · poslední načtení ${new Date(calendarStatus.lastSyncAt).toLocaleString("cs-CZ")}` : ""}`
+                : calendarStatus?.configured
+                  ? `Připraveno k připojení. Redirect URI: ${calendarStatus.redirectUri}`
+                  : `Chybí nastavení: ${(calendarStatus?.missing || ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"]).join(", ")}`}
+            </small>
+          </div>
+          {timedVisibleTasks
             .slice(0, 3)
             .map((task) => (
               <div className="agenda" key={task.id}>
@@ -2881,20 +5937,41 @@ function Tasks({
                 </div>
               </div>
             ))}
-          {!loading && rows.filter((x) => x.dueAt).length === 0 && (
+          {!loading && timedVisibleTasks.length === 0 && (
             <div className="empty-state">Žádné termíny v kalendáři.</div>
           )}
+          <button className="calendar" type="button" onClick={exportCalendar}>
+            <CalendarDays size={16} /> Stáhnout aktuální výběr do kalendáře
+          </button>
           <button
             className="calendar"
-            onClick={() =>
-              note(
-                "Připojení Microsoft 365 a Google Calendar bude další integrační krok.",
-              )
-            }
+            type="button"
+            onClick={connectGoogleCalendar}
           >
-            <CalendarDays size={16} /> Připojit kalendář Microsoft 365 nebo
-            Google
+            <CalendarDays size={16} /> {calendarStatus?.connected ? "Znovu připojit Google kalendář" : "Připojit Google kalendář"}
           </button>
+          {calendarStatus?.connected && (
+            <button className="calendar" type="button" onClick={loadCalendarEvents}>
+              <CalendarDays size={16} /> Načíst události z Google kalendáře
+            </button>
+          )}
+          {calendarStatus?.connected && (
+            <div className="calendar-events">
+              <b>Nejbližší události z Google</b>
+              {calendarLoading ? (
+                <small>Načítám kalendář…</small>
+              ) : calendarEvents.length === 0 ? (
+                <small>V Google kalendáři nejsou načtené žádné nejbližší události.</small>
+              ) : (
+                calendarEvents.slice(0, 5).map((event) => (
+                  <a href={event.link || "#"} target="_blank" rel="noreferrer" key={event.id}>
+                    <span>{event.start ? new Date(event.start).toLocaleString("cs-CZ") : "Bez termínu"}</span>
+                    <strong>{event.title}</strong>
+                  </a>
+                ))
+              )}
+            </div>
+          )}
         </section>
       </div>
       {open && (
@@ -2909,9 +5986,9 @@ function Tasks({
             <header>
               <div>
                 <p>NOVÝ ÚKOL</p>
-                <h2>Další krok</h2>
+                <h2>{editing ? "Upravit další krok" : "Další krok"}</h2>
               </div>
-              <button type="button" onClick={() => setOpen(false)}>
+              <button type="button" onClick={() => { setOpen(false); setEditing(null); }}>
                 ×
               </button>
             </header>
@@ -2926,6 +6003,30 @@ function Tasks({
                 />
               </label>
               <label>
+                Typ záznamu
+                <select value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option value="task">Úkol</option>
+                  <option value="meeting">Schůzka</option>
+                  <option value="note">Poznámka</option>
+                </select>
+              </label>
+              <label>
+                Priorita
+                <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <option value="1">1, vysoká</option>
+                  <option value="2">2, běžná</option>
+                  <option value="3">3, nízká</option>
+                </select>
+              </label>
+              <label>
+                Štítek / tag
+                <input
+                  value={tag}
+                  onChange={(e) => setTag(e.target.value)}
+                  placeholder="Například follow-up, nabídka, NIS2"
+                />
+              </label>
+              <label>
                 Termín
                 <input
                   type="datetime-local"
@@ -2933,17 +6034,96 @@ function Tasks({
                   onChange={(e) => setDueAt(e.target.value)}
                 />
               </label>
+              <label className="search-picker">
+                Firma
+                <input
+                  value={companyQuery}
+                  onChange={(e) => {
+                    setCompanyQuery(e.target.value);
+                    setCompanyId("");
+                  }}
+                  placeholder="Pište alespoň 3 znaky názvu firmy"
+                />
+                {companyQuery.trim().length > 0 && companyQuery.trim().length < 3 && (
+                  <small>Pro hledání zadejte minimálně 3 znaky.</small>
+                )}
+                {companyResults.length > 0 && !companyId && (
+                  <div className="picker-results">
+                    {companyResults.map((company) => (
+                      <button
+                        type="button"
+                        key={company.id}
+                        onClick={() => {
+                          setCompanyId(company.id);
+                          setCompanyQuery(company.name);
+                        }}
+                      >
+                        <strong>{company.name}</strong>
+                        <span>{company.ico ? `IČO ${company.ico}` : company.source || "CRM"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </label>
+              <label className="search-picker">
+                Kontakt
+                <input
+                  value={contactQuery}
+                  onChange={(e) => {
+                    setContactQuery(e.target.value);
+                    setContactId("");
+                  }}
+                  placeholder="Pište alespoň 3 znaky jména, e-mailu nebo telefonu"
+                />
+                {contactQuery.trim().length > 0 && contactQuery.trim().length < 3 && (
+                  <small>Pro hledání zadejte minimálně 3 znaky.</small>
+                )}
+                {contactResults.length > 0 && !contactId && (
+                  <div className="picker-results">
+                    {contactResults.map((contact) => {
+                      const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email || "Kontakt";
+                      return (
+                        <button
+                          type="button"
+                          key={contact.id}
+                          onClick={() => {
+                            setContactId(contact.id);
+                            setContactQuery(contactName);
+                            if (contact.companyId) {
+                              setCompanyId(contact.companyId);
+                              setCompanyQuery(contact.company || "");
+                            }
+                          }}
+                        >
+                          <strong>{contactName}</strong>
+                          <span>{[contact.company, contact.email, contact.phone].filter(Boolean).join(" · ")}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </label>
             </div>
             <footer>
+              {editing && (
+                <button
+                  type="button"
+                  className="secondary danger-action"
+                  onClick={() => deleteTask(editing)}
+                >
+                  <Trash2 size={15} />
+                  Koš
+                </button>
+              )}
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setOpen(false)}
+                onClick={() => { setOpen(false); setEditing(null); }}
               >
                 Zrušit
               </button>
               <button disabled={saving} type="submit" className="primary">
-                {saving ? "Ukládám…" : "Uložit úkol"}
+                {saving ? "Ukládám…" : editing ? "Uložit změny" : "Uložit úkol"}
               </button>
             </footer>
           </form>
@@ -2952,7 +6132,371 @@ function Tasks({
     </>
   );
 }
+function CalendarView({ note }: { note: (s: string) => void }) {
+  const [mode, setMode] = useState<"day" | "workweek" | "month">("workweek"),
+    [tasks, setTasks] = useState<TaskRecord[]>([]),
+    [companies, setCompanies] = useState<CompanyRecord[]>([]),
+    [contacts, setContacts] = useState<ContactRecord[]>([]),
+    [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null),
+    [calendarEvents, setCalendarEvents] = useState<CalendarEventRecord[]>([]),
+    [syncing, setSyncing] = useState(false),
+    [lastSyncSummary, setLastSyncSummary] = useState(""),
+    [open, setOpen] = useState(false),
+    [saving, setSaving] = useState(false),
+    [title, setTitle] = useState(""),
+    [kind, setKind] = useState("meeting"),
+    [dueAt, setDueAt] = useState(""),
+    [priority, setPriority] = useState("2"),
+    [tag, setTag] = useState(""),
+    [companyId, setCompanyId] = useState(""),
+    [companyQuery, setCompanyQuery] = useState(""),
+    [contactId, setContactId] = useState(""),
+    [contactQuery, setContactQuery] = useState("");
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const load = () =>
+    Promise.all([
+      fetch("/api/tasks").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/companies").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/contacts").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/calendar/google/status").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/calendar/google/events").then((r) => (r.ok ? r.json() : { events: [] })),
+    ])
+      .then(([taskRows, companyRows, contactRows, status, events]) => {
+        setTasks(taskRows);
+        setCompanies(companyRows);
+        setContacts(contactRows);
+        setCalendarStatus(status);
+        setCalendarEvents(events.events || []);
+      })
+      .catch(() => note("Kalendář se nepodařilo načíst."));
+  useEffect(() => {
+    load();
+  }, []);
+  const companyResults =
+    companyQuery.trim().length >= 3
+      ? companies
+          .filter((company) => company.name.toLowerCase().includes(companyQuery.trim().toLowerCase()))
+          .slice(0, 8)
+      : [];
+  const contactResults =
+    contactQuery.trim().length >= 3
+      ? contacts
+          .filter((contact) => {
+            const haystack = `${contact.firstName} ${contact.lastName} ${contact.email || ""} ${contact.phone || ""} ${contact.company || ""}`.toLowerCase();
+            return haystack.includes(contactQuery.trim().toLowerCase()) && (!companyId || contact.companyId === companyId);
+          })
+          .slice(0, 8)
+      : [];
+  const resetForm = () => {
+    setTitle("");
+    setKind("meeting");
+    setDueAt("");
+    setPriority("2");
+    setTag("");
+    setCompanyId("");
+    setCompanyQuery("");
+    setContactId("");
+    setContactQuery("");
+  };
+  const saveCalendarItem = async () => {
+    if (!title.trim()) {
+      note("Doplňte název záznamu.");
+      return;
+    }
+    setSaving(true);
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        kind,
+        dueAt: dueAt || null,
+        priority,
+        tag: tag || null,
+        companyId: companyId || null,
+        contactId: contactId || null,
+      }),
+    });
+    setSaving(false);
+    if (!response.ok) {
+      note("Záznam se nepodařilo uložit.");
+      return;
+    }
+    const created = await response.json();
+    if (calendarStatus?.connected && dueAt && kind === "meeting") {
+      await fetch("/api/calendar/google/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: created.id }),
+      }).catch(() => null);
+    }
+    setOpen(false);
+    resetForm();
+    load();
+    note(kind === "meeting" ? "Schůzka byla uložena do kalendáře." : "Záznam byl uložen do kalendáře.");
+  };
+  const syncCalendar = async (silent = false) => {
+    if (!calendarStatus?.connected) {
+      if (!silent) note("Nejdřív připojte Google kalendář.");
+      return;
+    }
+    setSyncing(true);
+    const response = await fetch("/api/calendar/google/sync", { method: "POST" });
+    setSyncing(false);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (!silent) note(data.error || "Synchronizace Google kalendáře se nepodařila.");
+      return;
+    }
+    const data = await response.json();
+    const summary = [
+      `Google → CRM: ${data.imported || 0} nových, ${data.updatedFromGoogle || 0} upravených.`,
+      `CRM → Google: ${data.pushed || 0} nových, ${data.updatedInGoogle || 0} upravených.`,
+      data.skippedForNextBatch ? `Zbývá ${data.skippedForNextBatch} položek do další dávky.` : "",
+      data.googleErrors ? `Google dočasně odmítl ${data.googleErrors} požadavků.` : "",
+    ].filter(Boolean).join(" ");
+    setLastSyncSummary(summary);
+    await load();
+    if (!silent) note("Kalendář je obousměrně synchronizovaný.");
+  };
+  useEffect(() => {
+    if (!calendarStatus?.connected) return;
+    const interval = window.setInterval(() => {
+      syncCalendar(true);
+    }, 45000);
+    return () => window.clearInterval(interval);
+  }, [calendarStatus?.connected]);
+  const connectGoogleCalendar = () => {
+    if (!calendarStatus?.oauthUrl) {
+      note("Google kalendář není připravený k připojení. Zkontrolujte OAuth nastavení.");
+      return;
+    }
+    window.open(calendarStatus.oauthUrl, "_blank", "noopener,noreferrer");
+  };
+  const deleteCalendarTask = async (task: TaskRecord) => {
+    if (!window.confirm(`Opravdu chcete odstranit záznam „${task.title}“?`)) return;
+    const response = await fetch("/api/tasks", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.id }),
+    });
+    if (!response.ok) {
+      note("Záznam se nepodařilo odstranit.");
+      return;
+    }
+    load();
+    note("Záznam byl odstraněn.");
+  };
+  const workweekDays = Array.from({ length: 5 }, (_, index) => {
+    const base = new Date(today);
+    const day = today.getDay() || 7;
+    base.setDate(today.getDate() - day + 1 + index);
+    return base;
+  });
+  const monthDays = Array.from({ length: 31 }, (_, index) => {
+    const base = new Date(today.getFullYear(), today.getMonth(), 1);
+    base.setDate(index + 1);
+    return base.getMonth() === today.getMonth() ? base : null;
+  }).filter(Boolean) as Date[];
+  const days = mode === "day" ? [today] : mode === "workweek" ? workweekDays : monthDays;
+  const itemsForDay = (day: Date) => {
+    const key = localDateKey(day);
+    const representedGoogleEventIds = new Set(
+      tasks
+        .filter((task) => task.externalProvider === "google_calendar" && task.externalId)
+        .map((task) => task.externalId),
+    );
+    const taskItems = tasks
+      .filter((task) => task.dueAt && localDateKey(new Date(task.dueAt)) === key)
+      .map((task) => ({ type: "task" as const, task, time: new Date(task.dueAt!).getTime() }));
+    const googleItems = calendarEvents
+      .filter((event) => event.start && localDateKey(new Date(event.start)) === key && !representedGoogleEventIds.has(event.id))
+      .map((event) => ({ type: "google" as const, event, time: event.start ? new Date(event.start).getTime() : 0 }));
+    return [...taskItems, ...googleItems].sort((a, b) => a.time - b.time);
+  };
+  return (
+    <>
+      <div className="title">
+        <div>
+          <p>KALENDÁŘ</p>
+          <h1>Kalendář aktivit</h1>
+          <small>Schůzky, úkoly, poznámky a synchronizace s Google kalendářem.</small>
+        </div>
+        <button className="primary" type="button" onClick={() => setOpen(true)}>
+          <Plus size={17} />
+          Nová schůzka
+        </button>
+      </div>
+      <section className="panel calendar-shell">
+        <div className="calendar-toolbar">
+          <div className="segmented">
+            <button className={mode === "day" ? "active" : ""} type="button" onClick={() => setMode("day")}>Den</button>
+            <button className={mode === "workweek" ? "active" : ""} type="button" onClick={() => setMode("workweek")}>Pracovní týden</button>
+            <button className={mode === "month" ? "active" : ""} type="button" onClick={() => setMode("month")}>Měsíc</button>
+          </div>
+          <div className="calendar-actions">
+            <button className="secondary" type="button" onClick={() => syncCalendar(false)} disabled={syncing}>
+              <CalendarDays size={15} />
+              {syncing ? "Synchronizuji…" : "Synchronizovat obousměrně"}
+            </button>
+            <button className="secondary" type="button" onClick={connectGoogleCalendar}>
+              <CalendarDays size={15} />
+              {calendarStatus?.connected ? "Znovu připojit Google" : "Připojit Google"}
+            </button>
+          </div>
+        </div>
+        <div className="sync-state">
+          <b>{calendarStatus?.connected ? "Automatická synchronizace je aktivní" : "Google kalendář není připojený"}</b>
+          <small>
+            {lastSyncSummary ||
+              (calendarStatus?.lastSyncAt
+                ? `Poslední synchronizace: ${new Date(calendarStatus.lastSyncAt).toLocaleString("cs-CZ")}`
+                : "Po připojení se kalendář bude průběžně načítat a párovat se záznamy v CRM.")}
+          </small>
+        </div>
+        <div className={`calendar-board ${mode}`}>
+          {days.map((day) => (
+            <div className="calendar-slot" key={day.toISOString()}>
+              <strong>
+                {day.toLocaleDateString("cs-CZ", {
+                  weekday: mode === "month" ? undefined : "long",
+                  day: "numeric",
+                  month: "numeric",
+                })}
+              </strong>
+              {itemsForDay(day).length === 0 ? (
+                <small>Volno</small>
+              ) : (
+                itemsForDay(day).map((item) =>
+                  item.type === "google" ? (
+                    <a href={item.event.link || "#"} target="_blank" rel="noreferrer" key={`g-${item.event.id}`} className="calendar-item google">
+                      <span>{item.event.start ? new Date(item.event.start).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : "Google"}</span>
+                      {item.event.title}
+                    </a>
+                  ) : (
+                    <div className="calendar-item" key={item.task.id}>
+                      <span>{new Date(item.task.dueAt!).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>
+                      <b>{item.task.title}</b>
+                      <small>{[item.task.company, item.task.contactName, item.task.tag].filter(Boolean).join(" · ")}</small>
+                      {item.task.syncedAt && <small>Sync {new Date(item.task.syncedAt).toLocaleString("cs-CZ")}</small>}
+                      <button type="button" onClick={() => deleteCalendarTask(item.task)} aria-label="Odstranit záznam">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ),
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+      {open && (
+        <div className="modal-backdrop">
+          <form className="modal" onSubmit={(event) => { event.preventDefault(); saveCalendarItem(); }}>
+            <header>
+              <div>
+                <p>KALENDÁŘ</p>
+                <h2>Nový kalendářový záznam</h2>
+              </div>
+              <button type="button" onClick={() => { setOpen(false); resetForm(); }}>×</button>
+            </header>
+            <div className="form-grid task-form">
+              <label>
+                Název
+                <input required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Například schůzka s klientem" />
+              </label>
+              <label>
+                Typ
+                <select value={kind} onChange={(event) => setKind(event.target.value)}>
+                  <option value="meeting">Schůzka</option>
+                  <option value="task">Úkol</option>
+                  <option value="note">Poznámka</option>
+                </select>
+              </label>
+              <label>
+                Datum a čas
+                <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+              </label>
+              <label>
+                Priorita
+                <select value={priority} onChange={(event) => setPriority(event.target.value)}>
+                  <option value="1">1, vysoká</option>
+                  <option value="2">2, běžná</option>
+                  <option value="3">3, nízká</option>
+                </select>
+              </label>
+              <label>
+                Štítek
+                <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="Například obchod, follow-up" />
+              </label>
+              <label className="search-picker">
+                Firma
+                <input value={companyQuery} onChange={(event) => { setCompanyQuery(event.target.value); setCompanyId(""); }} placeholder="Minimálně 3 znaky" />
+                {companyQuery.trim().length > 0 && companyQuery.trim().length < 3 && <small>Zadejte minimálně 3 znaky.</small>}
+                {companyResults.length > 0 && !companyId && (
+                  <div className="picker-results">
+                    {companyResults.map((company) => (
+                      <button type="button" key={company.id} onClick={() => { setCompanyId(company.id); setCompanyQuery(company.name); }}>
+                        <strong>{company.name}</strong>
+                        <span>{company.ico ? `IČO ${company.ico}` : company.source || "CRM"}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </label>
+              <label className="search-picker">
+                Kontakt
+                <input value={contactQuery} onChange={(event) => { setContactQuery(event.target.value); setContactId(""); }} placeholder="Minimálně 3 znaky" />
+                {contactQuery.trim().length > 0 && contactQuery.trim().length < 3 && <small>Zadejte minimálně 3 znaky.</small>}
+                {contactResults.length > 0 && !contactId && (
+                  <div className="picker-results">
+                    {contactResults.map((contact) => {
+                      const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email || "Kontakt";
+                      return (
+                        <button type="button" key={contact.id} onClick={() => {
+                          setContactId(contact.id);
+                          setContactQuery(contactName);
+                          if (contact.companyId) {
+                            setCompanyId(contact.companyId);
+                            setCompanyQuery(contact.company || "");
+                          }
+                        }}>
+                          <strong>{contactName}</strong>
+                          <span>{[contact.company, contact.email, contact.phone].filter(Boolean).join(" · ")}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </label>
+            </div>
+            <footer>
+              <button type="button" className="secondary" onClick={() => { setOpen(false); resetForm(); }}>Zrušit</button>
+              <button disabled={saving} type="submit" className="primary">{saving ? "Ukládám…" : "Uložit do kalendáře"}</button>
+            </footer>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
 function Sources({ note }: { note: (s: string) => void }) {
+  const mappingFields = [
+    ["", "Neimportovat"],
+    ["company", "Firma"],
+    ["contact", "Kontakt"],
+    ["email", "E-mail"],
+    ["phone", "Telefon"],
+    ["role", "Role / pozice"],
+    ["demand", "Název poptávky"],
+    ["text", "Text inzerátu"],
+    ["source", "Zdroj"],
+    ["sourceUrl", "URL zdroje"],
+    ["location", "Lokalita"],
+    ["ico", "IČO"],
+    ["website", "Web firmy"],
+  ];
   const [running, setRunning] = useState(false),
     [result, setResult] = useState(""),
     [monitorRunning, setMonitorRunning] = useState(false),
@@ -2962,8 +6506,90 @@ function Sources({ note }: { note: (s: string) => void }) {
     [manualText, setManualText] = useState(
       "firma;kontakt;email;telefon;role;poptávka;text;zdroj\n",
     ),
+    [manualFileName, setManualFileName] = useState(""),
+    [manualRows, setManualRows] = useState<string[][]>([]),
+    [manualMapping, setManualMapping] = useState<Record<string, string>>({}),
     [manualRunning, setManualRunning] = useState(false),
     [manualResult, setManualResult] = useState("");
+  const splitManualLine = (line: string) => {
+    const separator = line.includes(";") ? ";" : line.includes("\t") ? "\t" : ",";
+    return line.split(separator).map((cell) => cell.trim().replace(/^"|"$/g, ""));
+  };
+  const detectMapping = (headers: string[]) => {
+    const aliases: Record<string, string> = {
+      firma: "company",
+      company: "company",
+      společnost: "company",
+      spolecnost: "company",
+      kontakt: "contact",
+      jméno: "contact",
+      jmeno: "contact",
+      name: "contact",
+      email: "email",
+      "e-mail": "email",
+      telefon: "phone",
+      phone: "phone",
+      role: "role",
+      pozice: "role",
+      poptávka: "demand",
+      poptavka: "demand",
+      inzerát: "demand",
+      inzerat: "demand",
+      text: "text",
+      detail: "text",
+      zdroj: "source",
+      source: "source",
+      url: "sourceUrl",
+      odkaz: "sourceUrl",
+      lokalita: "location",
+      location: "location",
+      ico: "ico",
+      ičo: "ico",
+      web: "website",
+      website: "website",
+    };
+    return Object.fromEntries(
+      headers.map((header, index) => [
+        String(index),
+        aliases[header.toLowerCase().trim()] || "",
+      ]),
+    );
+  };
+  const updateManualPreview = (text: string) => {
+    const parsed = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+      .map(splitManualLine);
+    setManualRows(parsed);
+    if (parsed[0]) setManualMapping(detectMapping(parsed[0]));
+  };
+  const handleManualFile = async (file: File | null) => {
+    if (!file) return;
+    setManualFileName(file.name);
+    setManualResult("");
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
+      const text = rows.map((row) => row.map((cell) => String(cell ?? "")).join(";")).join("\n");
+      setManualText(text);
+      updateManualPreview(text);
+      note("Excel soubor byl načtený, zkontrolujte mapování sloupců.");
+      return;
+    }
+    if (lower.endsWith(".csv") || lower.endsWith(".tsv") || lower.endsWith(".txt")) {
+      const text = await file.text();
+      setManualText(text);
+      updateManualPreview(text);
+      note("Soubor byl načtený, zkontrolujte mapování sloupců.");
+      return;
+    }
+    setManualResult("PDF a obrázky jsou připravené jako vstup, ale zatím vyžadují textovou vrstvu nebo ruční vložení vytěženého textu do pole níže. OCR doplníme jako další krok.");
+  };
   const loadHistory = () =>
     fetch("/api/import-runs")
       .then((r) => (r.ok ? r.json() : []))
@@ -2983,7 +6609,7 @@ function Sources({ note }: { note: (s: string) => void }) {
       return;
     }
     setResult(
-      `Zpracováno ${data.received} záznamů, IT shoda ${data.matched}, nové ${data.created}, aktualizované ${data.updated}, přeskočeno ${data.skipped}.`,
+      `MPSV ${data.file}: celkem ${data.received}, IT shoda ${data.matched}, zpracováno ${data.processed}, nové poptávky ${data.created}, aktualizace ${data.updated}, koš/limit ${data.skipped + (data.limitedByRun || 0)}. Firmy nové/spárované ${data.companiesCreated}/${data.companiesMatched}, kontakty nové/spárované ${data.contactsCreated}/${data.contactDuplicates}.`,
     );
     loadHistory();
     note("Import MPSV byl dokončen.");
@@ -3001,7 +6627,7 @@ function Sources({ note }: { note: (s: string) => void }) {
       return;
     }
     setMonitorResult(
-      `Nalezeno ${data.found}, nově uloženo ${data.created}, aktualizováno ${data.updated}, přeskočeno ${data.skipped}.`,
+      `Nalezeno ${data.found}, nově uloženo ${data.created}, aktualizováno ${data.updated}, přeskočeno ${data.skipped}.${data.warnings?.length ? ` První upozornění: ${data.warnings[0]}` : ""}`,
     );
     loadHistory();
     note("Ruční kontrola Job Monitoru byla dokončena.");
@@ -3016,7 +6642,7 @@ function Sources({ note }: { note: (s: string) => void }) {
     const response = await fetch("/api/imports/manual", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: manualText }),
+      body: JSON.stringify({ text: manualText, mapping: manualMapping }),
     });
     const data = await response.json();
     setManualRunning(false);
@@ -3025,10 +6651,33 @@ function Sources({ note }: { note: (s: string) => void }) {
       return;
     }
     setManualResult(
-      `Přijato ${data.received}, firmy ${data.companiesCreated}, kontakty ${data.contactsCreated}, duplicity kontaktů ${data.contactDuplicatesFound}, nové poptávky ${data.demandsCreated}, aktualizace ${data.demandsUpdated}.`,
+      `Přijato ${data.received}, firmy ${data.companiesCreated}, duplicitní firmy ${data.companyDuplicatesFound}, kontakty ${data.contactsCreated}, duplicity kontaktů ${data.contactDuplicatesFound}, nové poptávky ${data.demandsCreated}, aktualizace ${data.demandsUpdated}, přeskočeno ${data.skipped}.${data.warnings?.length ? ` První upozornění: ${data.warnings[0]}` : ""}`,
     );
     loadHistory();
     note("Ruční import dokončen, kontakty a firmy byly zpracovány.");
+  };
+  const previewManualImport = async () => {
+    if (!manualText.trim()) {
+      note("Vložte data pro kontrolu importu.");
+      return;
+    }
+    setManualRunning(true);
+    setManualResult("");
+    const response = await fetch("/api/imports/manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: manualText, mapping: manualMapping, preview: true }),
+    });
+    const data = await response.json();
+    setManualRunning(false);
+    if (!response.ok) {
+      note(data.error || "Kontrola importu se nepodařila.");
+      return;
+    }
+    setManualResult(
+      `Náhled: ${data.received} řádků, nové firmy ${data.companiesToCreate}, spárované firmy ${data.companiesToMatch}, nové kontakty ${data.contactsToCreate}, spárované kontakty ${data.contactsToMatch}, nové poptávky ${data.demandsToCreate}, aktualizace poptávek ${data.demandsToUpdate}, přeskočeno ${data.skippedRows}.${data.warnings?.length ? ` První upozornění: ${data.warnings[0]}` : ""}`,
+    );
+    note("Náhled importu je připravený, zatím se nic neuložilo.");
   };
   return (
     <>
@@ -3048,10 +6697,10 @@ function Sources({ note }: { note: (s: string) => void }) {
             <span className="source-logo dark">JM</span>
             <b>RUČNĚ</b>
           </div>
-          <h2>Job Monitor, IT Security</h2>
+          <h2>Job Monitor, pracovní portály</h2>
           <p>
-            Spustí aktuální kontrolu Jobs.cz a Prace.cz podle vašich uložených
-            filtrů a uloží jen nové shody.
+            Spustí aktuální kontrolu Jobs.cz, Prace.cz, ITjobs.cz a Profesia.cz
+            podle vašich uložených filtrů a uloží jen nové shody.
           </p>
           <footer>
             <span>Využívá nastavení níže</span>
@@ -3117,6 +6766,80 @@ function Sources({ note }: { note: (s: string) => void }) {
             </button>
           </footer>
         </article>
+        <article className="source-card active-source">
+          <div>
+            <span className="source-logo">GM</span>
+            <b>KONCEPTY</b>
+          </div>
+          <h2>Firemní Gmail</h2>
+          <p>
+            Generuje cold e-maily, ukládá je jako komunikaci ke kontaktu a
+            otevře Gmail compose ke kontrole před odesláním. Plné API čtení a
+            odesílání čeká na Google OAuth přístupy.
+          </p>
+          <footer>
+            <span>Bezpečný režim bez automatického odeslání</span>
+            <button
+              className="secondary"
+              onClick={() => {
+                goTo("Nastavení");
+                note("Gmail nastavíte v sekci Nastavení.");
+              }}
+            >
+              Nastavit Gmail
+            </button>
+          </footer>
+        </article>
+        <article className="source-card">
+          <div>
+            <span className="source-logo">SJ</span>
+            <b className="pending">ČEKÁ NA TOKEN</b>
+          </div>
+          <h2>StartupJobs API</h2>
+          <p>
+            StartupJobs má API pro kariérní weby a ATS. Pro automatický import
+            je potřeba Bearer token od StartupJobs, potom půjde zdroj zapnout
+            jako čistý API konektor.
+          </p>
+          <footer>
+            <span>Připraveno pro API přístup</span>
+            <button
+              className="secondary"
+              onClick={() =>
+                note(
+                  "StartupJobs API potřebuje Bearer token z firemního účtu. Jakmile ho budete mít, doplním plně automatický konektor.",
+                )
+              }
+            >
+              Co chybí
+            </button>
+          </footer>
+        </article>
+        <article className="source-card">
+          <div>
+            <span className="source-logo orange">JP</span>
+            <b className="pending">KANDIDÁT</b>
+          </div>
+          <h2>JenPráce.cz</h2>
+          <p>
+            Portál je vhodný jako další zdroj, ale aktuální veřejné hledání
+            vrací hodně obecných katalogových odkazů. Zapnu ho až po ověření
+            stabilního detailního výpisu nebo přes placený scraper.
+          </p>
+          <footer>
+            <span>Čeká na ověřený zdroj dat</span>
+            <button
+              className="secondary"
+              onClick={() =>
+                note(
+                  "JenPráce zatím nechávám mimo automatický import, aby do databáze nepadaly nerelevantní katalogové položky.",
+                )
+              }
+            >
+              Stav zdroje
+            </button>
+          </footer>
+        </article>
         <article className="source-card">
           <div>
             <span className="source-logo orange">CSV</span>
@@ -3163,17 +6886,67 @@ function Sources({ note }: { note: (s: string) => void }) {
               <b>Podporované sloupce</b>
               <small>
                 firma, kontakt, email, telefon, role, poptávka, text, zdroj,
-                url. Oddělovač může být středník, čárka nebo tabulátor.
+                url. Nahrajte Excel, CSV, TXT, případně vložte text z PDF nebo obrázku.
               </small>
             </div>
+            <label className="file-import-box">
+              Soubor k importu
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,.png,.jpg,.jpeg,.webp"
+                onChange={(e) => handleManualFile(e.target.files?.[0] || null)}
+              />
+              <small>
+                {manualFileName || "Excel, CSV a TXT se načtou přímo. PDF a obrázek zatím použijte s vloženým textem."}
+              </small>
+            </label>
             <label className="import-textarea">
               Data k importu
               <textarea
                 value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
+                onChange={(e) => {
+                  setManualText(e.target.value);
+                  updateManualPreview(e.target.value);
+                }}
                 spellCheck={false}
               />
             </label>
+            {manualRows.length > 0 && (
+              <section className="mapping-panel">
+                <h3>Mapování sloupců</h3>
+                <div className="mapping-grid">
+                  {manualRows[0].map((header, index) => (
+                    <label key={`${header}-${index}`}>
+                      <span>{header || `Sloupec ${index + 1}`}</span>
+                      <select
+                        value={manualMapping[String(index)] || ""}
+                        onChange={(e) =>
+                          setManualMapping({
+                            ...manualMapping,
+                            [String(index)]: e.target.value,
+                          })
+                        }
+                      >
+                        {mappingFields.map(([value, label]) => (
+                          <option key={value || "empty"} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                <div className="mapping-preview">
+                  {manualRows.slice(0, 4).map((row, rowIndex) => (
+                    <div key={rowIndex}>
+                      {manualRows[0].map((_, cellIndex) => (
+                        <span key={cellIndex}>{row[cellIndex] || " "}</span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             {manualResult && <div className="source-result">{manualResult}</div>}
             <footer>
               <button
@@ -3182,6 +6955,14 @@ function Sources({ note }: { note: (s: string) => void }) {
                 onClick={() => setManualOpen(false)}
               >
                 Zavřít
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={manualRunning}
+                onClick={previewManualImport}
+              >
+                Zkontrolovat import
               </button>
               <button className="primary" disabled={manualRunning}>
                 {manualRunning ? "Importuji…" : "Spustit import"}
@@ -3196,6 +6977,7 @@ function Sources({ note }: { note: (s: string) => void }) {
   );
 }
 function ImportHistory({ runs }: { runs: ImportRunRecord[] }) {
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const statusLabel: Record<string, string> = {
     completed: "Hotovo",
     completed_with_warnings: "Hotovo s upozorněním",
@@ -3203,47 +6985,115 @@ function ImportHistory({ runs }: { runs: ImportRunRecord[] }) {
     running: "Běží",
     queued: "Čeká",
   };
-  const describe = (run: ImportRunRecord) => {
-    if (!run.errorSummary) return "";
+  const warningsFor = (run: ImportRunRecord) => {
+    if (!run.errorSummary) return [];
     try {
-      const parsed = JSON.parse(run.errorSummary) as { warnings?: string[] };
-      return parsed.warnings?.join(" ") || run.errorSummary;
+      const parsed = JSON.parse(run.errorSummary) as { warnings?: string[]; summary?: Record<string, unknown> };
+      return parsed.warnings || [run.errorSummary];
     } catch {
-      return run.errorSummary;
+      return [run.errorSummary];
     }
   };
+  const exportImportLog = () => {
+    const rows = [
+      "Zdroj;Stav;Spuštěno;Dokončeno;Přijato;Nové;Aktualizované;Přeskočené;Upozornění",
+      ...runs.map((run) =>
+        [
+          run.sourceName || "Zdroj",
+          statusLabel[run.status] || run.status,
+          run.startedAt ? new Date(run.startedAt).toLocaleString("cs-CZ") : "",
+          run.completedAt ? new Date(run.completedAt).toLocaleString("cs-CZ") : "",
+          String(run.receivedCount || 0),
+          String(run.createdCount || 0),
+          String(run.updatedCount || 0),
+          String(run.skippedCount || 0),
+          warningsFor(run).join(" | "),
+        ]
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(";"),
+      ),
+    ];
+    downloadCsv(rows, "neovia-import-log.csv");
+  };
+  const totalWarnings = runs.reduce((sum, run) => sum + warningsFor(run).length, 0);
   return (
     <section className="panel import-history">
       <div className="panel-header">
         <h2>Log importů a důvody přeskočení</h2>
+        <button onClick={exportImportLog}>
+          Export logu
+          <ChevronDown size={14} />
+        </button>
+      </div>
+      <div className="import-summary">
+        <article>
+          <b>{runs.length}</b>
+          <small>běhů importu</small>
+        </article>
+        <article>
+          <b>{runs.reduce((sum, run) => sum + Number(run.createdCount || 0), 0)}</b>
+          <small>nových záznamů</small>
+        </article>
+        <article>
+          <b>{runs.reduce((sum, run) => sum + Number(run.updatedCount || 0), 0)}</b>
+          <small>aktualizací</small>
+        </article>
+        <article className={totalWarnings ? "warn" : ""}>
+          <b>{totalWarnings}</b>
+          <small>upozornění</small>
+        </article>
       </div>
       {runs.length === 0 ? (
         <div className="empty-state">
           Zatím tu není žádný běh importu. Spusťte Job Monitor nebo MPSV import.
         </div>
       ) : (
-        runs.map((run) => (
-          <div className="import-run" key={run.id}>
-            <div>
-              <b>{run.sourceName || "Zdroj"}</b>
+        runs.map((run) => {
+          const warnings = warningsFor(run);
+          const expanded = expandedRun === run.id;
+          return (
+            <div className="import-run" key={run.id}>
+              <div>
+                <b>{run.sourceName || "Zdroj"}</b>
+                <small>
+                  {run.completedAt || run.startedAt
+                    ? new Date(run.completedAt || run.startedAt!).toLocaleString(
+                        "cs-CZ",
+                      )
+                    : "Bez času"}
+                </small>
+              </div>
+              <span className={`import-status ${run.status}`}>
+                {statusLabel[run.status] || run.status}
+              </span>
               <small>
-                {run.completedAt || run.startedAt
-                  ? new Date(run.completedAt || run.startedAt!).toLocaleString(
-                      "cs-CZ",
-                    )
-                  : "Bez času"}
+                Přijato {run.receivedCount}, nové {run.createdCount},
+                aktualizované {run.updatedCount}, přeskočené {run.skippedCount}
               </small>
+              <button
+                className="link-action import-detail-toggle"
+                type="button"
+                onClick={() => setExpandedRun(expanded ? null : run.id)}
+              >
+                {warnings.length
+                  ? expanded
+                    ? "Skrýt důvody"
+                    : `Zobrazit důvody (${warnings.length})`
+                  : "Bez upozornění"}
+              </button>
+              {expanded && warnings.length > 0 && (
+                <ul className="import-warnings">
+                  {warnings.slice(0, 12).map((warning, index) => (
+                    <li key={`${run.id}-${index}`}>{warning}</li>
+                  ))}
+                  {warnings.length > 12 && (
+                    <li>Dalších {warnings.length - 12} upozornění je v exportu logu.</li>
+                  )}
+                </ul>
+              )}
             </div>
-            <span className={`import-status ${run.status}`}>
-              {statusLabel[run.status] || run.status}
-            </span>
-            <small>
-              Přijato {run.receivedCount}, nové {run.createdCount},
-              aktualizované {run.updatedCount}, přeskočené {run.skippedCount}
-            </small>
-            {describe(run) && <p>{describe(run)}</p>}
-          </div>
-        ))
+          );
+        })
       )}
     </section>
   );

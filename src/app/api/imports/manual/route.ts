@@ -21,6 +21,16 @@ const emailFrom = (value: string) =>
   value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
 const phoneFrom = (value: string) =>
   value.match(/(?:\+420\s*)?(?:\d[\s-]?){9,}/)?.[0]?.trim() || "";
+const companyKey = (value: string) =>
+  normalize(value)
+    .toLowerCase()
+    .replace(/\b(s\.?r\.?o\.?|a\.?s\.?|spol\.?|inc\.?|ltd\.?)\b/g, "")
+    .replace(/[^a-z0-9á-ž]/gi, "");
+const domainFrom = (value: string) => {
+  const text = normalize(value).toLowerCase();
+  const url = text.match(/https?:\/\/([^/\s]+)/)?.[1] || text.match(/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/)?.[1] || "";
+  return url.replace(/^www\./, "");
+};
 
 function splitLine(line: string) {
   const separator = line.includes(";") ? ";" : line.includes("\t") ? "\t" : ",";
@@ -58,7 +68,7 @@ function keyFor(value: string) {
   return map[value.toLowerCase().replace(/\s+/g, "")] || value;
 }
 
-function parseRows(input: string) {
+function parseRows(input: string, mapping?: Record<string, string>) {
   const lines = input
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -74,6 +84,17 @@ function parseRows(input: string) {
   const dataLines = hasHeader ? lines.slice(1) : lines;
   return dataLines.map((line) => {
     const cells = splitLine(line);
+    if (mapping && Object.values(mapping).some(Boolean)) {
+      const row: Record<string, string> = {};
+      cells.forEach((cell, index) => {
+        const key = mapping[String(index)] || "";
+        if (key) row[key] = cell;
+      });
+      row.text ||= line;
+      row.source ||= "Ruční import";
+      row.demand ||= row.role || row.text || "Importovaná poptávka";
+      return row;
+    }
     if (hasHeader) {
       return Object.fromEntries(headers.map((key, index) => [key, cells[index] || ""]));
     }
@@ -100,7 +121,7 @@ export async function POST(request: Request) {
       { status: 401 },
     );
   const body = await request.json();
-  const rows = parseRows(String(body.text || ""));
+  const rows = parseRows(String(body.text || ""), body.mapping || undefined);
   if (!rows.length)
     return NextResponse.json(
       { error: "Import neobsahuje žádný čitelný řádek." },
@@ -108,6 +129,73 @@ export async function POST(request: Request) {
     );
 
   const db = getDb();
+  if (body.preview) {
+    const existingCompanies = await db
+      .select()
+      .from(companies)
+      .where(eq(companies.ownerId, session.user.id));
+    const existingContacts = await db
+      .select()
+      .from(contacts)
+      .where(eq(contacts.ownerId, session.user.id));
+    const existingDemands = await db
+      .select()
+      .from(demands)
+      .where(eq(demands.ownerId, session.user.id));
+    let companiesToCreate = 0;
+    let companiesToMatch = 0;
+    let contactsToCreate = 0;
+    let contactsToMatch = 0;
+    let demandsToCreate = 0;
+    let demandsToUpdate = 0;
+    let skippedRows = 0;
+    const warnings: string[] = [];
+    const seenCompanies = new Set<string>();
+    for (const raw of rows) {
+      const companyName = normalize(raw.company);
+      const title = normalize(raw.demand || raw.role || "Importovaná poptávka");
+      if (!companyName || companyName === "Nezařazená firma") {
+        skippedRows++;
+        warnings.push(`Řádek bez firmy bude přeskočen: ${title}`);
+        continue;
+      }
+      const importedDomain = domainFrom(raw.sourceUrl || raw.website || raw.email || "");
+      const matchedCompany = existingCompanies.find((company) => {
+        const sameName = company.name === companyName || companyKey(company.name) === companyKey(companyName);
+        const sameIco = raw.ico && company.ico && normalize(raw.ico) === normalize(company.ico);
+        const sameDomain = importedDomain && company.website && domainFrom(company.website) === importedDomain;
+        return sameName || sameIco || sameDomain;
+      });
+      if (matchedCompany) companiesToMatch++;
+      else if (!seenCompanies.has(companyKey(companyName))) {
+        companiesToCreate++;
+        seenCompanies.add(companyKey(companyName));
+      }
+      const email = normalize(raw.email || emailFrom(String(raw.text || ""))).toLowerCase();
+      const phone = normalize(raw.phone || phoneFrom(String(raw.text || "")));
+      if (email || phone || raw.contact) {
+        const matchedContact = existingContacts.find((contact) => Boolean((email && contact.email === email) || (phone && contact.phone === phone)));
+        if (matchedContact) contactsToMatch++;
+        else contactsToCreate++;
+      }
+      const companyId = matchedCompany?.id || "";
+      const matchedDemand = existingDemands.find((demand) => demand.companyId === companyId && demand.title === title);
+      if (matchedDemand) demandsToUpdate++;
+      else demandsToCreate++;
+    }
+    return NextResponse.json({
+      preview: true,
+      received: rows.length,
+      companiesToCreate,
+      companiesToMatch,
+      contactsToCreate,
+      contactsToMatch,
+      demandsToCreate,
+      demandsToUpdate,
+      skippedRows,
+      warnings,
+    });
+  }
   const [source] = await db
     .select()
     .from(connectorSources)
@@ -140,6 +228,7 @@ export async function POST(request: Request) {
   let companiesCreated = 0;
   let contactsCreated = 0;
   let contactDuplicatesFound = 0;
+  let companyDuplicatesFound = 0;
   let demandsCreated = 0;
   let demandsUpdated = 0;
   let skipped = 0;
@@ -155,11 +244,17 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const [knownCompany] = await db
+    const allCompanies = await db
       .select()
       .from(companies)
-      .where(and(eq(companies.ownerId, session.user.id), eq(companies.name, companyName)))
-      .limit(1);
+      .where(eq(companies.ownerId, session.user.id));
+    const importedDomain = domainFrom(raw.sourceUrl || raw.website || raw.email || "");
+    const knownCompany = allCompanies.find((company) => {
+      const sameName = company.name === companyName || companyKey(company.name) === companyKey(companyName);
+      const sameIco = raw.ico && company.ico && normalize(raw.ico) === normalize(company.ico);
+      const sameDomain = importedDomain && company.website && domainFrom(company.website) === importedDomain;
+      return sameName || sameIco || sameDomain;
+    });
     const company =
       knownCompany ||
       (
@@ -169,11 +264,14 @@ export async function POST(request: Request) {
           .returning()
       )[0];
     if (!knownCompany) companiesCreated++;
-    else if (!knownCompany.source) {
+    else {
+      companyDuplicatesFound++;
+      if (!knownCompany.source) {
       await db
         .update(companies)
         .set({ source: sourceTag, updatedAt: new Date() })
         .where(eq(companies.id, knownCompany.id));
+      }
     }
 
     const email = normalize(raw.email || emailFrom(String(raw.text || ""))).toLowerCase();
@@ -237,6 +335,10 @@ export async function POST(request: Request) {
         ),
       )
       .limit(1);
+    if (existingDemand?.deletedAt) {
+      warnings.push(`Poptávka "${title}" byla přeskočena, protože je v koši.`);
+      continue;
+    }
     const demandValues = {
       title,
       role: normalize(raw.role || title) || null,
@@ -282,6 +384,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     received: rows.length,
     companiesCreated,
+    companyDuplicatesFound,
     contactsCreated,
     contactDuplicatesFound,
     demandsCreated,

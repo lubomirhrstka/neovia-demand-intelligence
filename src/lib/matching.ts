@@ -105,6 +105,24 @@ export function roleMatch(demand: string, capacity: string): {
     sales: ["sales", "business development", "bd"],
     data: ["data scientist", "data engineer", "analyst"],
     devops: ["devops", "infrastructure", "sre"],
+    cyber: [
+      "cybersecurity",
+      "kybernetická bezpečnost",
+      "kyberbezpečnost",
+      "security",
+      "nis2",
+      "zákon o kybernetické bezpečnosti",
+      "manažer kybernetické bezpečnosti",
+      "architekt kybernetické bezpečnosti",
+      "auditor kybernetické bezpečnosti",
+      "mkb",
+      "akb",
+      "isms",
+      "iso 27001",
+      "ciso",
+      "soc",
+      "incident response",
+    ],
   };
 
   for (const [, words] of Object.entries(keywords)) {

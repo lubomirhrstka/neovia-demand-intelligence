@@ -1,0 +1,2 @@
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "kind" varchar(40) DEFAULT 'task' NOT NULL;
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "tag" varchar(120);

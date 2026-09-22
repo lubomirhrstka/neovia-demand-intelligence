@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companies, demands, opportunities } from "@/lib/schema";
+import { companies, contacts, demands, opportunities } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -25,10 +25,19 @@ export async function GET() {
       nextStep: opportunities.nextStep,
       note: opportunities.note,
       source: opportunities.source,
+      companyId: opportunities.companyId,
+      contactId: opportunities.contactId,
+      demandId: opportunities.demandId,
+      updatedAt: opportunities.updatedAt,
       company: companies.name,
+      contactFirstName: contacts.firstName,
+      contactLastName: contacts.lastName,
+      demandTitle: demands.title,
     })
     .from(opportunities)
     .leftJoin(companies, eq(opportunities.companyId, companies.id))
+    .leftJoin(contacts, eq(opportunities.contactId, contacts.id))
+    .leftJoin(demands, eq(opportunities.demandId, demands.id))
     .where(eq(opportunities.ownerId, actor.id))
     .orderBy(desc(opportunities.updatedAt));
   return NextResponse.json(rows);

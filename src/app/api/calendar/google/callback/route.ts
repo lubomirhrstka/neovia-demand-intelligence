@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { exchangeCodeForTokens, gmailFetch } from "@/lib/gmail";
+import { exchangeCalendarCodeForTokens, googleProfile } from "@/lib/google-calendar";
 import { emailAccounts } from "@/lib/schema";
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -12,34 +12,26 @@ export async function GET(request: Request) {
   const error = url.searchParams.get("error");
   const state = url.searchParams.get("state");
 
-  if (error) {
-    return NextResponse.redirect(
-      `${url.origin}/#E-mail?gmail=error&reason=${encodeURIComponent(error)}`,
-    );
-  }
-
-  if (!code) {
-    return NextResponse.redirect(`${url.origin}/#E-mail?gmail=missing-code`);
-  }
+  if (error) return NextResponse.redirect(`${url.origin}/#Úkoly?calendar=error&reason=${encodeURIComponent(error)}`);
+  if (!code) return NextResponse.redirect(`${url.origin}/#Úkoly?calendar=missing-code`);
 
   const session = await auth.api.getSession({ headers: await headers() });
   const ownerId = session?.user?.id || state;
-  if (!ownerId) {
-    return NextResponse.redirect(`${url.origin}/#E-mail?gmail=missing-user`);
-  }
+  if (!ownerId) return NextResponse.redirect(`${url.origin}/#Úkoly?calendar=missing-user`);
 
   try {
-    const tokens = await exchangeCodeForTokens(code);
-    const profile = await gmailFetch<{ emailAddress: string }>(tokens.access_token, "/profile");
+    const tokens = await exchangeCalendarCodeForTokens(code);
+    const profile = await googleProfile(tokens.access_token).catch(() => ({ email: "google-calendar", name: "Google Calendar" }));
     const expiresAt = tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null;
     const db = getDb();
     const [existing] = await db
       .select()
       .from(emailAccounts)
-      .where(and(eq(emailAccounts.ownerId, ownerId), eq(emailAccounts.provider, "gmail")))
+      .where(and(eq(emailAccounts.ownerId, ownerId), eq(emailAccounts.provider, "google_calendar")))
       .limit(1);
     const payload = {
-      email: profile.emailAddress,
+      email: profile.email || existing?.email || "google-calendar",
+      displayName: profile.name || existing?.displayName || "Google Calendar",
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || existing?.refreshToken || null,
       scope: tokens.scope || null,
@@ -51,11 +43,11 @@ export async function GET(request: Request) {
     if (existing) {
       await db.update(emailAccounts).set(payload).where(eq(emailAccounts.id, existing.id));
     } else {
-      await db.insert(emailAccounts).values({ ...payload, provider: "gmail", ownerId });
+      await db.insert(emailAccounts).values({ ...payload, provider: "google_calendar", ownerId });
     }
-    return NextResponse.redirect(`${url.origin}/#E-mail?gmail=connected`);
+    return NextResponse.redirect(`${url.origin}/#Úkoly?calendar=connected`);
   } catch (callbackError) {
-    const message = callbackError instanceof Error ? callbackError.message : "gmail-callback-failed";
-    return NextResponse.redirect(`${url.origin}/#E-mail?gmail=error&reason=${encodeURIComponent(message)}`);
+    const message = callbackError instanceof Error ? callbackError.message : "calendar-callback-failed";
+    return NextResponse.redirect(`${url.origin}/#Úkoly?calendar=error&reason=${encodeURIComponent(message)}`);
   }
 }
