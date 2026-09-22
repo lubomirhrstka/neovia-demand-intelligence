@@ -6187,6 +6187,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     [open, setOpen] = useState(false),
     [editingId, setEditingId] = useState<string | null>(null),
     [deleteTarget, setDeleteTarget] = useState<TaskRecord | null>(null),
+    [openingGoogleEventId, setOpeningGoogleEventId] = useState<string | null>(null),
     [saving, setSaving] = useState(false),
     [title, setTitle] = useState(""),
     [kind, setKind] = useState("meeting"),
@@ -6378,6 +6379,42 @@ function CalendarView({ note }: { note: (s: string) => void }) {
   const deleteCalendarTask = (task: TaskRecord) => {
     setDeleteTarget(task);
   };
+  const openGoogleEventInApp = async (event: CalendarEventRecord) => {
+    if (!event.start) {
+      note("Google událost nemá čas začátku, nejde ji otevřít jako CRM záznam.");
+      return;
+    }
+    setOpeningGoogleEventId(event.id);
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: event.title || "Událost z Google kalendáře",
+        kind: "meeting",
+        priority: 2,
+        tag: "Google",
+        dueAt: new Date(event.start).toISOString(),
+        externalProvider: "google_calendar",
+        externalId: event.id,
+        syncedAt: new Date().toISOString(),
+      }),
+    });
+    setOpeningGoogleEventId(null);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Google událost se nepodařilo otevřít v aplikaci.");
+      return;
+    }
+    const task = await response.json();
+    const taskForEdit: TaskRecord = {
+      ...task,
+      company: null,
+      contactName: null,
+      opportunityTitle: null,
+    };
+    setTasks((current) => [taskForEdit, ...current.filter((item) => item.id !== taskForEdit.id)]);
+    openForEdit(taskForEdit);
+  };
   const performDelete = async (mode: "crm" | "crm_and_google" | "archive") => {
     if (!deleteTarget) return;
     const response = await fetch("/api/tasks", {
@@ -6486,10 +6523,17 @@ function CalendarView({ note }: { note: (s: string) => void }) {
               ) : (
                 itemsForDay(day).map((item) =>
                   item.type === "google" ? (
-                    <a href={item.event.link || "#"} target="_blank" rel="noreferrer" key={`g-${item.event.id}`} className="calendar-item google">
+                    <div
+                      key={`g-${item.event.id}-${item.event.start || ""}`}
+                      className="calendar-item google"
+                      onClick={() => openGoogleEventInApp(item.event)}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <span>{item.event.start ? new Date(item.event.start).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : "Google"}</span>
-                      {item.event.title}
-                    </a>
+                      <b>{item.event.title}</b>
+                      <small>{openingGoogleEventId === item.event.id ? "Otevírám v aplikaci…" : "Google · kliknutím otevřít v aplikaci"}</small>
+                    </div>
                   ) : (
                     <div className="calendar-item" key={item.task.id} onClick={() => openForEdit(item.task)} role="button" tabIndex={0}>
                       <span>{new Date(item.task.dueAt!).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>

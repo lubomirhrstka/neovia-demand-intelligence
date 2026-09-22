@@ -11,6 +11,12 @@ async function currentUser() {
   const session = await auth.api.getSession({ headers: await headers() });
   return session?.user;
 }
+function sameLocalDate(left: Date | null, right: Date | null) {
+  if (!left || !right) return false;
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
+}
 
 export async function GET() {
   const user = await currentUser();
@@ -74,17 +80,48 @@ export async function POST(request: Request) {
     if (existing) return NextResponse.json({ ...existing, alreadyExists: true });
   }
   const db = getDb();
+  const externalProvider = body.externalProvider || null;
+  const externalId = body.externalId || null;
+  const dueAt = body.dueAt ? new Date(body.dueAt) : null;
+  if (externalProvider && externalId) {
+    const existingExternalRows = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.createdById, user.id), eq(tasks.externalProvider, externalProvider), eq(tasks.externalId, externalId)));
+    const existingExternal = existingExternalRows.find((task) => sameLocalDate(task.dueAt, dueAt)) || existingExternalRows[0];
+    if (existingExternal) {
+      const [restored] = await db
+        .update(tasks)
+        .set({
+          title: body.title?.trim() || existingExternal.title,
+          kind: body.kind || existingExternal.kind || "meeting",
+          status: "open",
+          priority: Number(body.priority || existingExternal.priority || 2),
+          tag: body.tag?.trim() || existingExternal.tag || "Google",
+          dueAt,
+          syncedAt: body.syncedAt ? new Date(body.syncedAt) : existingExternal.syncedAt || new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, existingExternal.id))
+        .returning();
+      await db.insert(auditLog).values({ entityType: "task", entityId: restored.id, action: "calendar_restored", before: existingExternal, after: restored, actorId: user.id });
+      return NextResponse.json(restored);
+    }
+  }
   const [created] = await db.insert(tasks).values({
     title: body.title.trim(),
     kind: body.kind || "task",
     priority: Number(body.priority || 2),
     tag: body.tag?.trim() || null,
-    dueAt: body.dueAt ? new Date(body.dueAt) : null,
+    dueAt,
     assigneeId: body.assigneeId || user.id,
     createdById: user.id,
     contactId: body.contactId || null,
     companyId: body.companyId || null,
     opportunityId: body.opportunityId || null,
+    externalProvider,
+    externalId,
+    syncedAt: body.syncedAt ? new Date(body.syncedAt) : externalId ? new Date() : null,
   }).returning();
   await db.insert(auditLog).values({ entityType: "task", entityId: created.id, action: "created", after: created, actorId: user.id });
   if (created.contactId || created.companyId || created.opportunityId) {
