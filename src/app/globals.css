@@ -882,6 +882,29 @@
   bottom: 0;
   z-index: 1;
 }
+.delete-choice > p {
+  padding: 18px 23px 0;
+  font-size: 13px;
+  color: #40595a;
+}
+.delete-choice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 23px 6px;
+}
+.delete-choice-options button {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+}
+.delete-choice-options button small {
+  font-weight: 400;
+  color: #6a7f80;
+  font-size: 11px;
+}
 .modal header {
   display: flex;
   align-items: start;

@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { calendarFetch, calendarPatch, calendarPost, getFreshCalendarAccount } from "@/lib/google-calendar";
-import { activities, auditLog, emailAccounts, tasks } from "@/lib/schema";
+import { activities, auditLog, emailAccounts, ignoredCalendarEvents, tasks } from "@/lib/schema";
 import { and, eq, isNotNull, or } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -74,8 +74,15 @@ export async function POST() {
   let skippedForNextBatch = 0;
   let googleErrors = 0;
 
+  const ignoredRows = await db
+    .select({ externalId: ignoredCalendarEvents.externalId })
+    .from(ignoredCalendarEvents)
+    .where(and(eq(ignoredCalendarEvents.ownerId, session.user.id), eq(ignoredCalendarEvents.provider, "google_calendar")));
+  const ignoredIds = new Set(ignoredRows.map((row) => row.externalId));
+
   for (const item of data.items || []) {
     if (!item.id || item.status === "cancelled") continue;
+    if (ignoredIds.has(item.id)) continue;
     const startsAt = eventStart(item);
     if (!startsAt) continue;
     const [existing] = await db
@@ -132,7 +139,7 @@ export async function POST() {
     .filter((task) => {
       if (!task.dueAt) return false;
       if (task.dueAt < windowStart || task.dueAt > windowEnd) return false;
-      if (task.status === "done") return false;
+      if (task.status === "done" || task.status === "archived" || task.status === "cancelled") return false;
       if (task.externalProvider && task.externalProvider !== "google_calendar") return false;
       if (!task.externalId) return true;
       if (!task.syncedAt) return true;

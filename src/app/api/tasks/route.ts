@@ -1,10 +1,11 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { activities, auditLog, companies, contacts, opportunities, tasks } from "@/lib/schema";
+import { activities, auditLog, companies, contacts, ignoredCalendarEvents, opportunities, tasks } from "@/lib/schema";
 import { aliasedTable } from "drizzle-orm/alias";
 import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { calendarDelete, getFreshCalendarAccount } from "@/lib/google-calendar";
 
 async function currentUser() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -159,6 +160,7 @@ export async function DELETE(request: Request) {
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
   const body = await request.json();
   if (!body.id) return NextResponse.json({ error: "Chybí ID úkolu." }, { status: 400 });
+  const mode: "crm" | "crm_and_google" | "archive" = body.mode || "crm";
   const db = getDb();
   const [current] = await db
     .select()
@@ -166,6 +168,38 @@ export async function DELETE(request: Request) {
     .where(and(eq(tasks.id, body.id), or(eq(tasks.assigneeId, user.id), eq(tasks.createdById, user.id))))
     .limit(1);
   if (!current) return NextResponse.json({ error: "Záznam nebyl nalezen." }, { status: 404 });
+
+  const isGoogleSynced = current.externalProvider === "google_calendar" && Boolean(current.externalId);
+
+  if (mode === "crm_and_google" && isGoogleSynced) {
+    const account = await getFreshCalendarAccount(user.id);
+    if (account?.accessToken) {
+      try {
+        await calendarDelete(account.accessToken, `/calendars/primary/events/${encodeURIComponent(current.externalId!)}`);
+      } catch (error) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Událost se v Google kalendáři nepodařilo smazat." }, { status: 502 });
+      }
+    }
+  }
+
+  if ((mode === "crm" || mode === "archive") && isGoogleSynced) {
+    await db.insert(ignoredCalendarEvents).values({
+      externalId: current.externalId!,
+      provider: current.externalProvider!,
+      ownerId: user.id,
+    });
+  }
+
+  if (mode === "archive") {
+    const [archived] = await db
+      .update(tasks)
+      .set({ status: "archived", updatedAt: new Date() })
+      .where(eq(tasks.id, current.id))
+      .returning();
+    await db.insert(auditLog).values({ entityType: "task", entityId: current.id, action: "archived", before: current, after: archived, actorId: user.id });
+    return NextResponse.json({ ok: true, archived: true });
+  }
+
   await db.insert(auditLog).values({ entityType: "task", entityId: current.id, action: "deleted", before: current, actorId: user.id });
   await db.delete(tasks).where(eq(tasks.id, current.id));
   return NextResponse.json({ ok: true });

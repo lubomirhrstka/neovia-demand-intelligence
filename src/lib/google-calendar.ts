@@ -107,6 +107,17 @@ export async function calendarPatch<T>(accessToken: string, path: string, body: 
   return data as T;
 }
 
+export async function calendarDelete(accessToken: string, path: string) {
+  const response = await fetch(`${calendarBase}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (response.status === 204 || response.status === 404 || response.status === 410) return;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || "Událost se v Google kalendáři nepodařilo smazat.");
+}
+
 export async function googleProfile(accessToken: string) {
   const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },

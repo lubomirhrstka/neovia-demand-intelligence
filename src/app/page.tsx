@@ -6147,6 +6147,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     [lastSyncSummary, setLastSyncSummary] = useState(""),
     [open, setOpen] = useState(false),
     [editingId, setEditingId] = useState<string | null>(null),
+    [deleteTarget, setDeleteTarget] = useState<TaskRecord | null>(null),
     [saving, setSaving] = useState(false),
     [title, setTitle] = useState(""),
     [kind, setKind] = useState("meeting"),
@@ -6294,19 +6295,31 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     }
     window.open(calendarStatus.oauthUrl, "_blank", "noopener,noreferrer");
   };
-  const deleteCalendarTask = async (task: TaskRecord) => {
-    if (!window.confirm(`Opravdu chcete odstranit záznam „${task.title}“?`)) return;
+  const deleteCalendarTask = (task: TaskRecord) => {
+    setDeleteTarget(task);
+  };
+  const performDelete = async (mode: "crm" | "crm_and_google" | "archive") => {
+    if (!deleteTarget) return;
     const response = await fetch("/api/tasks", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: task.id }),
+      body: JSON.stringify({ id: deleteTarget.id, mode }),
     });
     if (!response.ok) {
-      note("Záznam se nepodařilo odstranit.");
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Záznam se nepodařilo odstranit.");
+      setDeleteTarget(null);
       return;
     }
+    setDeleteTarget(null);
     load();
-    note("Záznam byl odstraněn.");
+    note(
+      mode === "archive"
+        ? "Záznam byl archivován a znovu se nenaimportuje."
+        : mode === "crm_and_google"
+          ? "Záznam byl smazán v CRM i v Google kalendáři."
+          : "Záznam byl smazán v CRM a už se znovu nenaimportuje.",
+    );
   };
   const workweekDays = Array.from({ length: 5 }, (_, index) => {
     const base = new Date(today);
@@ -6328,7 +6341,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
         .map((task) => task.externalId),
     );
     const taskItems = tasks
-      .filter((task) => task.dueAt && localDateKey(new Date(task.dueAt)) === key)
+      .filter((task) => task.status !== "archived" && task.dueAt && localDateKey(new Date(task.dueAt)) === key)
       .map((task) => ({ type: "task" as const, task, time: new Date(task.dueAt!).getTime() }));
     const googleItems = calendarEvents
       .filter((event) => event.start && localDateKey(new Date(event.start)) === key && !representedGoogleEventIds.has(event.id))
@@ -6496,6 +6509,46 @@ function CalendarView({ note }: { note: (s: string) => void }) {
               <button disabled={saving} type="submit" className="primary">{saving ? "Ukládám…" : editingId ? "Uložit změny" : "Uložit do kalendáře"}</button>
             </footer>
           </form>
+        </div>
+      )}
+      {deleteTarget && (
+        <div className="modal-backdrop">
+          <div className="modal delete-choice">
+            <header>
+              <div>
+                <p>KALENDÁŘ</p>
+                <h2>Odstranit „{deleteTarget.title}“</h2>
+              </div>
+              <button type="button" onClick={() => setDeleteTarget(null)}>×</button>
+            </header>
+            {deleteTarget.externalProvider === "google_calendar" && deleteTarget.externalId ? (
+              <>
+                <p>Tento záznam je propojený s Google kalendářem. Jak ho chcete odstranit?</p>
+                <div className="delete-choice-options">
+                  <button type="button" className="secondary" onClick={() => performDelete("crm")}>
+                    Smazat jen v CRM
+                    <small>V Google kalendáři zůstane, ale znovu se sem nenaimportuje.</small>
+                  </button>
+                  <button type="button" className="secondary" onClick={() => performDelete("crm_and_google")}>
+                    Smazat v CRM i v Google kalendáři
+                    <small>Událost zmizí úplně, na obou místech.</small>
+                  </button>
+                  <button type="button" className="secondary" onClick={() => performDelete("archive")}>
+                    Archivovat
+                    <small>Skryje se z kalendáře, zůstane v historii a znovu se nenaimportuje.</small>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p>Opravdu chcete tento záznam odstranit?</p>
+            )}
+            <footer>
+              <button type="button" className="secondary" onClick={() => setDeleteTarget(null)}>Zrušit</button>
+              {!(deleteTarget.externalProvider === "google_calendar" && deleteTarget.externalId) && (
+                <button type="button" className="primary" onClick={() => performDelete("crm")}>Odstranit</button>
+              )}
+            </footer>
+          </div>
         </div>
       )}
     </>

@@ -35,6 +35,7 @@ export const taskStatus = pgEnum("task_status", [
   "blocked",
   "done",
   "cancelled",
+  "archived",
 ]);
 export const connectorStatus = pgEnum("connector_status", [
   "draft",
@@ -205,6 +206,13 @@ export const tasks = pgTable("tasks", {
   createdById: text("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const ignoredCalendarEvents = pgTable("ignored_calendar_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  externalId: text("external_id").notNull(),
+  provider: varchar("provider", { length: 80 }).notNull().default("google_calendar"),
+  ownerId: text("owner_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const activities = pgTable("activities", {
   id: uuid("id").defaultRandom().primaryKey(),
