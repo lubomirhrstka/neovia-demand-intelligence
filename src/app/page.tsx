@@ -9,6 +9,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   FileBarChart,
@@ -665,8 +667,15 @@ function AccountSettings({
     [mailSenderName, setMailSenderName] = useState(() => window.localStorage.getItem("neovia-mail-sender") || name),
     [mailSignature, setMailSignature] = useState(() => window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA"),
     [mailMode, setMailMode] = useState(() => window.localStorage.getItem("neovia-mail-mode") || "draft_review"),
+    [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => {
+    fetch("/api/calendar/google/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setCalendarStatus)
+      .catch(() => setCalendarStatus(null));
+  }, []);
   const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -707,6 +716,13 @@ function AccountSettings({
     window.localStorage.setItem("neovia-mail-signature", mailSignature);
     window.localStorage.setItem("neovia-mail-mode", mailMode);
     note("E-mailové nastavení bylo uloženo v aplikaci. Skutečné Gmail API se zapne po doplnění Google OAuth přístupů.");
+  };
+  const connectGoogleCalendar = () => {
+    if (!calendarStatus?.oauthUrl) {
+      note("Google kalendář není připravený k připojení. Zkontrolujte OAuth nastavení.");
+      return;
+    }
+    window.open(calendarStatus.oauthUrl, "_blank", "noopener,noreferrer");
   };
   return (
     <>
@@ -776,6 +792,28 @@ function AccountSettings({
           </div>
           <button className="primary" onClick={saveMailSettings}>
             Uložit e-mailové nastavení
+          </button>
+        </section>
+        <section className="panel setting-card">
+          <h2>Google kalendář</h2>
+          <p>
+            Připojení a případnou reautorizaci kalendáře spravujte tady. V kalendáři pak zůstane jen běžná práce se schůzkami a synchronizací.
+          </p>
+          <div className={calendarStatus?.connected ? "email-status-card connected" : "email-status-card"}>
+            <span className="source-tag">{calendarStatus?.connected ? "PŘIPOJENO" : "PŘIPRAVENO"}</span>
+            <b>{calendarStatus?.connected ? calendarStatus.account : "Google kalendář zatím není připojený"}</b>
+            <small>
+              {calendarStatus?.connected
+                ? calendarStatus.lastSyncAt
+                  ? `Poslední synchronizace: ${new Date(calendarStatus.lastSyncAt).toLocaleString("cs-CZ")}`
+                  : "Kalendář je připojený, zatím bez záznamu synchronizace."
+                : calendarStatus?.configured
+                  ? `Redirect URI: ${calendarStatus.redirectUri}`
+                  : `Chybí nastavení: ${(calendarStatus?.missing || ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"]).join(", ")}`}
+            </small>
+          </div>
+          <button className="primary" type="button" onClick={connectGoogleCalendar}>
+            {calendarStatus?.connected ? "Znovu připojit Google kalendář" : "Připojit Google kalendář"}
           </button>
         </section>
         <section className="panel setting-card">
@@ -6138,6 +6176,7 @@ function Tasks({ note }: { note: (s: string) => void }) {
 }
 function CalendarView({ note }: { note: (s: string) => void }) {
   const [mode, setMode] = useState<"day" | "workweek" | "month">("workweek"),
+    [referenceDate, setReferenceDate] = useState(() => new Date()),
     [tasks, setTasks] = useState<TaskRecord[]>([]),
     [companies, setCompanies] = useState<CompanyRecord[]>([]),
     [contacts, setContacts] = useState<ContactRecord[]>([]),
@@ -6158,15 +6197,62 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     [companyQuery, setCompanyQuery] = useState(""),
     [contactId, setContactId] = useState(""),
     [contactQuery, setContactQuery] = useState("");
-  const today = new Date();
-  const todayKey = localDateKey(today);
-  const load = () =>
-    Promise.all([
+  const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const addDays = (value: Date, days: number) => {
+    const next = new Date(value);
+    next.setDate(next.getDate() + days);
+    return next;
+  };
+  const addMonths = (value: Date, months: number) => {
+    const next = new Date(value);
+    next.setMonth(next.getMonth() + months);
+    return next;
+  };
+  const startOfWorkweek = (value: Date) => {
+    const base = startOfDay(value);
+    const day = base.getDay() || 7;
+    base.setDate(base.getDate() - day + 1);
+    return base;
+  };
+  const visibleRange = () => {
+    if (mode === "day") {
+      const start = startOfDay(referenceDate);
+      return { start, end: addDays(start, 1) };
+    }
+    if (mode === "workweek") {
+      const start = startOfWorkweek(referenceDate);
+      return { start, end: addDays(start, 5) };
+    }
+    const start = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+    return { start, end: new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1) };
+  };
+  const calendarPeriodLabel = () => {
+    if (mode === "day") {
+      return referenceDate.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    }
+    if (mode === "workweek") {
+      const start = startOfWorkweek(referenceDate);
+      const end = addDays(start, 4);
+      return `${start.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })} – ${end.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" })}`;
+    }
+    return referenceDate.toLocaleDateString("cs-CZ", { month: "long", year: "numeric" });
+  };
+  const shiftPeriod = (direction: -1 | 1) => {
+    setReferenceDate((current) => {
+      if (mode === "day") return addDays(current, direction);
+      if (mode === "workweek") return addDays(current, direction * 7);
+      return addMonths(current, direction);
+    });
+  };
+  const load = () => {
+    const range = visibleRange();
+    const eventsUrl = `/api/calendar/google/events?from=${encodeURIComponent(range.start.toISOString())}&to=${encodeURIComponent(range.end.toISOString())}`;
+    return Promise.all([
       fetch("/api/tasks").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/companies").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/contacts").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/calendar/google/status").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/calendar/google/events").then((r) => (r.ok ? r.json() : { events: [] })),
+      fetch(eventsUrl).then((r) => (r.ok ? r.json() : { events: [] })),
     ])
       .then(([taskRows, companyRows, contactRows, status, events]) => {
         setTasks(taskRows);
@@ -6176,9 +6262,10 @@ function CalendarView({ note }: { note: (s: string) => void }) {
         setCalendarEvents(events.events || []);
       })
       .catch(() => note("Kalendář se nepodařilo načíst."));
+  };
   useEffect(() => {
     load();
-  }, []);
+  }, [mode, referenceDate]);
   const companyResults =
     companyQuery.trim().length >= 3
       ? companies
@@ -6288,13 +6375,6 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     }, 45000);
     return () => window.clearInterval(interval);
   }, [calendarStatus?.connected]);
-  const connectGoogleCalendar = () => {
-    if (!calendarStatus?.oauthUrl) {
-      note("Google kalendář není připravený k připojení. Zkontrolujte OAuth nastavení.");
-      return;
-    }
-    window.open(calendarStatus.oauthUrl, "_blank", "noopener,noreferrer");
-  };
   const deleteCalendarTask = (task: TaskRecord) => {
     setDeleteTarget(task);
   };
@@ -6321,30 +6401,25 @@ function CalendarView({ note }: { note: (s: string) => void }) {
           : "Záznam byl smazán v CRM a už se znovu nenaimportuje.",
     );
   };
-  const workweekDays = Array.from({ length: 5 }, (_, index) => {
-    const base = new Date(today);
-    const day = today.getDay() || 7;
-    base.setDate(today.getDate() - day + 1 + index);
-    return base;
-  });
+  const workweekDays = Array.from({ length: 5 }, (_, index) => addDays(startOfWorkweek(referenceDate), index));
   const monthDays = Array.from({ length: 31 }, (_, index) => {
-    const base = new Date(today.getFullYear(), today.getMonth(), 1);
+    const base = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
     base.setDate(index + 1);
-    return base.getMonth() === today.getMonth() ? base : null;
+    return base.getMonth() === referenceDate.getMonth() ? base : null;
   }).filter(Boolean) as Date[];
-  const days = mode === "day" ? [today] : mode === "workweek" ? workweekDays : monthDays;
+  const days = mode === "day" ? [referenceDate] : mode === "workweek" ? workweekDays : monthDays;
   const itemsForDay = (day: Date) => {
     const key = localDateKey(day);
     const representedGoogleEventIds = new Set(
       tasks
-        .filter((task) => task.externalProvider === "google_calendar" && task.externalId)
-        .map((task) => task.externalId),
+        .filter((task) => task.status !== "archived" && task.externalProvider === "google_calendar" && task.externalId && task.dueAt)
+        .map((task) => `${task.externalId}:${localDateKey(new Date(task.dueAt!))}`),
     );
     const taskItems = tasks
       .filter((task) => task.status !== "archived" && task.dueAt && localDateKey(new Date(task.dueAt)) === key)
       .map((task) => ({ type: "task" as const, task, time: new Date(task.dueAt!).getTime() }));
     const googleItems = calendarEvents
-      .filter((event) => event.start && localDateKey(new Date(event.start)) === key && !representedGoogleEventIds.has(event.id))
+      .filter((event) => event.start && localDateKey(new Date(event.start)) === key && !representedGoogleEventIds.has(`${event.id}:${key}`))
       .map((event) => ({ type: "google" as const, event, time: event.start ? new Date(event.start).getTime() : 0 }));
     return [...taskItems, ...googleItems].sort((a, b) => a.time - b.time);
   };
@@ -6363,19 +6438,27 @@ function CalendarView({ note }: { note: (s: string) => void }) {
       </div>
       <section className="panel calendar-shell">
         <div className="calendar-toolbar">
-          <div className="segmented">
-            <button className={mode === "day" ? "active" : ""} type="button" onClick={() => setMode("day")}>Den</button>
-            <button className={mode === "workweek" ? "active" : ""} type="button" onClick={() => setMode("workweek")}>Pracovní týden</button>
-            <button className={mode === "month" ? "active" : ""} type="button" onClick={() => setMode("month")}>Měsíc</button>
+          <div className="calendar-navigation">
+            <div className="calendar-period-controls">
+              <button className="icon secondary" type="button" onClick={() => shiftPeriod(-1)} aria-label="Předchozí období">
+                <ChevronLeft size={18} />
+              </button>
+              <button className="secondary today-button" type="button" onClick={() => setReferenceDate(new Date())}>Dnes</button>
+              <button className="icon secondary" type="button" onClick={() => shiftPeriod(1)} aria-label="Další období">
+                <ChevronRight size={18} />
+              </button>
+              <b>{calendarPeriodLabel()}</b>
+            </div>
+            <div className="segmented compact">
+              <button className={mode === "day" ? "active" : ""} type="button" onClick={() => setMode("day")}>Den</button>
+              <button className={mode === "workweek" ? "active" : ""} type="button" onClick={() => setMode("workweek")}>Týden</button>
+              <button className={mode === "month" ? "active" : ""} type="button" onClick={() => setMode("month")}>Měsíc</button>
+            </div>
           </div>
           <div className="calendar-actions">
             <button className="secondary" type="button" onClick={() => syncCalendar(false)} disabled={syncing}>
               <CalendarDays size={15} />
               {syncing ? "Synchronizuji…" : "Synchronizovat obousměrně"}
-            </button>
-            <button className="secondary" type="button" onClick={connectGoogleCalendar}>
-              <CalendarDays size={15} />
-              {calendarStatus?.connected ? "Znovu připojit Google" : "Připojit Google"}
             </button>
           </div>
         </div>
