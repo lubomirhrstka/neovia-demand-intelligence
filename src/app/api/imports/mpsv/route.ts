@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { sameCompanyIdentity } from "@/lib/matching";
 import { companies, connectorSources, contacts, demands, importRuns, users } from "@/lib/schema";
 import { and, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -190,14 +191,20 @@ export async function POST() {
     const limitedByRun = Math.max(0, matchedRows.length - relevant.length);
     let created = 0, updated = 0, skipped = 0, contactDuplicates = 0, contactsCreated = 0, companiesCreated = 0, companiesMatched = 0, missingContact = 0, missingDetail = 0;
     const warnings: string[] = [];
+    const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
     for (const item of relevant) {
       const externalId = `mpsv:${item.portalId}`;
       const title = normalize(item.pozadovanaProfese?.cs || "IT pozice");
       const companyName = normalize(item.zamestnavatel?.nazev || "Neznámý zaměstnavatel");
-      const [knownCompany] = await db.select().from(companies).where(and(eq(companies.name, companyName), eq(companies.ownerId, session.user.id))).limit(1);
+      const knownCompany = allCompanies.find((company) =>
+        sameCompanyIdentity(company, { name: companyName, ico: item.zamestnavatel?.ico || null }).same,
+      );
       const company = knownCompany || (await db.insert(companies).values({ name: companyName, ico: item.zamestnavatel?.ico || null, source: "MPSV", ownerId: session.user.id }).returning())[0];
       if (knownCompany) companiesMatched++;
-      else companiesCreated++;
+      else {
+        companiesCreated++;
+        allCompanies.push(company);
+      }
       if (knownCompany && !knownCompany.source) await db.update(companies).set({ source: "MPSV", updatedAt: new Date() }).where(eq(companies.id, knownCompany.id));
       const [existing] = await db.select().from(demands).where(and(eq(demands.ownerId, session.user.id), or(eq(demands.externalId, externalId), and(eq(demands.source, "MPSV"), eq(demands.title, title), eq(demands.companyId, company.id))))).limit(1);
       if (existing?.deletedAt) {

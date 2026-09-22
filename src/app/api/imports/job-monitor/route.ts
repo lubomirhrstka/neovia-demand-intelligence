@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { sameCompanyIdentity } from "@/lib/matching";
 import {
   companies,
   connectorSources,
@@ -409,6 +410,10 @@ export async function POST() {
     })
     .returning();
   const warnings: string[] = [];
+  const allCompanies = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.ownerId, ownerId));
   for (const source of allSources) {
     let html = "";
     try {
@@ -494,21 +499,17 @@ export async function POST() {
         warnings.push(`${source.name}: u inzerátu ${title} nebyl nalezen odkaz na detail.`);
       if (!detail.text)
         warnings.push(`${source.name}: u inzerátu ${title} se nepodařilo vytěžit plné znění, ${detail.reason}.`);
-      const [known] = await db
-        .select()
-        .from(companies)
-        .where(
-          and(eq(companies.ownerId, ownerId), eq(companies.name, companyName)),
-        )
-        .limit(1);
-      const company =
-        known ||
-        (
-          await db
-            .insert(companies)
-            .values({ name: companyName, source: source.name, ownerId })
-            .returning()
-        )[0];
+      const known = allCompanies.find((company) =>
+        sameCompanyIdentity(company, { name: companyName }).same,
+      );
+      let company = known;
+      if (!company) {
+        [company] = await db
+          .insert(companies)
+          .values({ name: companyName, source: source.name, ownerId })
+          .returning();
+        allCompanies.push(company);
+      }
       if (known && !known.source) {
         await db
           .update(companies)

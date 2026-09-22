@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { sameCompanyIdentity } from "@/lib/matching";
 import { companies, contacts, demands, opportunities } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -70,11 +71,13 @@ export async function POST(req: Request) {
     if (existing)
       return NextResponse.json({ ...existing, alreadyExists: true });
   }
-  const [known] = await db
+  const existingCompanies = await db
     .select()
     .from(companies)
-    .where(eq(companies.name, b.company.trim()))
-    .limit(1);
+    .where(eq(companies.ownerId, actor.id));
+  const known = existingCompanies.find((company) =>
+    sameCompanyIdentity(company, { name: b.company.trim() }).same,
+  );
   const sourceTag = b.source?.trim() || null;
   const company =
     known ||
