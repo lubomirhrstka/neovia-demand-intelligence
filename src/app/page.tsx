@@ -78,6 +78,10 @@ function localDateKey(value: Date) {
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+function toDatetimeLocal(value: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
 function repairCzechMojibake(value: string) {
   const replacements: Record<string, string> = {
     "√°": "á",
@@ -6142,6 +6146,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     [syncing, setSyncing] = useState(false),
     [lastSyncSummary, setLastSyncSummary] = useState(""),
     [open, setOpen] = useState(false),
+    [editingId, setEditingId] = useState<string | null>(null),
     [saving, setSaving] = useState(false),
     [title, setTitle] = useState(""),
     [kind, setKind] = useState("meeting"),
@@ -6189,6 +6194,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
           .slice(0, 8)
       : [];
   const resetForm = () => {
+    setEditingId(null);
     setTitle("");
     setKind("meeting");
     setDueAt("");
@@ -6199,6 +6205,19 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     setContactId("");
     setContactQuery("");
   };
+  const openForEdit = (task: TaskRecord) => {
+    setEditingId(task.id);
+    setTitle(task.title);
+    setKind(task.kind || "meeting");
+    setDueAt(task.dueAt ? toDatetimeLocal(new Date(task.dueAt)) : "");
+    setPriority(String(task.priority ?? 2));
+    setTag(task.tag || "");
+    setCompanyId(task.companyId || "");
+    setCompanyQuery(task.company || "");
+    setContactId(task.contactId || "");
+    setContactQuery(task.contactName || "");
+    setOpen(true);
+  };
   const saveCalendarItem = async () => {
     if (!title.trim()) {
       note("Doplňte název záznamu.");
@@ -6206,9 +6225,10 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     }
     setSaving(true);
     const response = await fetch("/api/tasks", {
-      method: "POST",
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...(editingId ? { id: editingId } : {}),
         title,
         kind,
         dueAt: dueAt || null,
@@ -6220,11 +6240,11 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     });
     setSaving(false);
     if (!response.ok) {
-      note("Záznam se nepodařilo uložit.");
+      note(editingId ? "Záznam se nepodařilo upravit." : "Záznam se nepodařilo uložit.");
       return;
     }
     const created = await response.json();
-    if (calendarStatus?.connected && dueAt && kind === "meeting") {
+    if (!editingId && calendarStatus?.connected && dueAt && kind === "meeting") {
       await fetch("/api/calendar/google/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6234,7 +6254,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
     setOpen(false);
     resetForm();
     load();
-    note(kind === "meeting" ? "Schůzka byla uložena do kalendáře." : "Záznam byl uložen do kalendáře.");
+    note(editingId ? "Záznam byl upraven." : kind === "meeting" ? "Schůzka byla uložena do kalendáře." : "Záznam byl uložen do kalendáře.");
   };
   const syncCalendar = async (silent = false) => {
     if (!calendarStatus?.connected) {
@@ -6375,12 +6395,12 @@ function CalendarView({ note }: { note: (s: string) => void }) {
                       {item.event.title}
                     </a>
                   ) : (
-                    <div className="calendar-item" key={item.task.id}>
+                    <div className="calendar-item" key={item.task.id} onClick={() => openForEdit(item.task)} role="button" tabIndex={0}>
                       <span>{new Date(item.task.dueAt!).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>
                       <b>{item.task.title}</b>
                       <small>{[item.task.company, item.task.contactName, item.task.tag].filter(Boolean).join(" · ")}</small>
                       {item.task.syncedAt && <small>Sync {new Date(item.task.syncedAt).toLocaleString("cs-CZ")}</small>}
-                      <button type="button" onClick={() => deleteCalendarTask(item.task)} aria-label="Odstranit záznam">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); deleteCalendarTask(item.task); }} aria-label="Odstranit záznam">
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -6397,7 +6417,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
             <header>
               <div>
                 <p>KALENDÁŘ</p>
-                <h2>Nový kalendářový záznam</h2>
+                <h2>{editingId ? "Upravit záznam" : "Nový kalendářový záznam"}</h2>
               </div>
               <button type="button" onClick={() => { setOpen(false); resetForm(); }}>×</button>
             </header>
@@ -6473,7 +6493,7 @@ function CalendarView({ note }: { note: (s: string) => void }) {
             </div>
             <footer>
               <button type="button" className="secondary" onClick={() => { setOpen(false); resetForm(); }}>Zrušit</button>
-              <button disabled={saving} type="submit" className="primary">{saving ? "Ukládám…" : "Uložit do kalendáře"}</button>
+              <button disabled={saving} type="submit" className="primary">{saving ? "Ukládám…" : editingId ? "Uložit změny" : "Uložit do kalendáře"}</button>
             </footer>
           </form>
         </div>

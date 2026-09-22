@@ -2733,6 +2733,7 @@ button.metric:hover {
   padding: 9px 28px 9px 10px;
   margin-bottom: 8px;
   font-size: 11px;
+  cursor: pointer;
 }
 .calendar-item.google {
   border-left-color: #6d8ee8;
