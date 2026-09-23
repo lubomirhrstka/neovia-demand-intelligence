@@ -32,6 +32,27 @@ const defaults = {
   ],
   locations: ["Praha", "Ostrava", "Brno", "remote", "hybrid"],
   excludedKeywords: ["junior", "trainee", "internship", "unpaid"],
+  blacklistedCompanies: [
+    "ManpowerGroup",
+    "Adecco",
+    "Randstad",
+    "Hays",
+    "Grafton Recruitment",
+    "Trenkwalder",
+    "Michael Page",
+    "Robert Half",
+    "Gi Group",
+    "Index Nosluš",
+    "Advantage Consulting",
+    "CPL Jobs",
+    "Synergie",
+    "DEKRA Personal",
+    "Work Service",
+    "McRoy Group",
+    "Approach People Recruitment",
+    "Alma Career",
+    "ProHuman",
+  ],
   minimumSalary: 80000,
   schedules: [
     { name: "Job Monitor, ranní kontrola", cron: "30 6 * * 1-5", enabled: true },
@@ -55,6 +76,9 @@ export async function GET() {
     .where(eq(monitorSettings.ownerId, user.id))
     .orderBy(desc(monitorSettings.updatedAt))
     .limit(1);
+  if (row && (!row.blacklistedCompanies || row.blacklistedCompanies.length === 0)) {
+    return NextResponse.json({ ...row, blacklistedCompanies: defaults.blacklistedCompanies });
+  }
   return NextResponse.json(row || defaults);
 }
 export async function PUT(req: Request) {
@@ -69,6 +93,7 @@ export async function PUT(req: Request) {
     keywords: body.keywords || [],
     locations: body.locations || [],
     excludedKeywords: body.excludedKeywords || [],
+    blacklistedCompanies: body.blacklistedCompanies || [],
     minimumSalary: Number(body.minimumSalary || 0),
     schedules: body.schedules || [],
     exports: body.exports || [],

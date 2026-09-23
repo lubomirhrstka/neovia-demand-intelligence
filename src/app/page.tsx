@@ -7542,6 +7542,16 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
           />
         </label>
         <label>
+          Blacklist personálních agentur
+          <input
+            value={data.blacklistedCompanies.join(", ")}
+            onChange={(e) =>
+              setData({ ...data, blacklistedCompanies: split(e.target.value) })
+            }
+          />
+          <small>Poptávky od těchto firem se při automatickém importu přeskočí (porovnává se podle názvu bez právní formy).</small>
+        </label>
+        <label>
           Lokality
           <input
             value={data.locations.join(", ")}

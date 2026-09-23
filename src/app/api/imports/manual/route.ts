@@ -8,8 +8,9 @@ import {
   contacts,
   demands,
   importRuns,
+  monitorSettings,
 } from "@/lib/schema";
-import { and, eq, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -129,6 +130,17 @@ export async function POST(request: Request) {
     );
 
   const db = getDb();
+  const [settingsRow] = await db
+    .select()
+    .from(monitorSettings)
+    .where(eq(monitorSettings.ownerId, session.user.id))
+    .orderBy(desc(monitorSettings.updatedAt))
+    .limit(1);
+  const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => companyKey(x)).filter(Boolean);
+  const isBlacklisted = (name: string) => {
+    const key = companyKey(name);
+    return Boolean(key && blacklist.some((b) => key.includes(b) || b.includes(key)));
+  };
   if (body.preview) {
     const existingCompanies = await db
       .select()
@@ -157,6 +169,11 @@ export async function POST(request: Request) {
       if (!companyName || companyName === "Nezařazená firma") {
         skippedRows++;
         warnings.push(`Řádek bez firmy bude přeskočen: ${title}`);
+        continue;
+      }
+      if (isBlacklisted(companyName)) {
+        skippedRows++;
+        warnings.push(`Řádek přeskočen — firma "${companyName}" je na blacklistu personálních agentur: ${title}`);
         continue;
       }
       const importedDomain = domainFrom(raw.sourceUrl || raw.website || raw.email || "");
@@ -241,6 +258,11 @@ export async function POST(request: Request) {
     if (!companyName || companyName === "Nezařazená firma") {
       skipped++;
       warnings.push(`Řádek bez firmy byl přeskočen: ${title}`);
+      continue;
+    }
+    if (isBlacklisted(companyName)) {
+      skipped++;
+      warnings.push(`Řádek přeskočen — firma "${companyName}" je na blacklistu personálních agentur: ${title}`);
       continue;
     }
 

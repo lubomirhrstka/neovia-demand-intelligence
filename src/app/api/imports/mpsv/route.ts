@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { sameCompanyIdentity } from "@/lib/matching";
-import { companies, connectorSources, contacts, demands, importRuns, users } from "@/lib/schema";
-import { and, eq, or } from "drizzle-orm";
+import { companyKey, sameCompanyIdentity } from "@/lib/matching";
+import { companies, connectorSources, contacts, demands, importRuns, monitorSettings, users } from "@/lib/schema";
+import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -189,13 +189,20 @@ export async function POST() {
     const matchedRows = allRows.filter(item => isItRole(item.pozadovanaProfese?.cs || ""));
     const relevant = matchedRows.slice(0, MAX_ITEMS_PER_RUN);
     const limitedByRun = Math.max(0, matchedRows.length - relevant.length);
-    let created = 0, updated = 0, skipped = 0, contactDuplicates = 0, contactsCreated = 0, companiesCreated = 0, companiesMatched = 0, missingContact = 0, missingDetail = 0;
+    let created = 0, updated = 0, skipped = 0, agencySkipped = 0, contactDuplicates = 0, contactsCreated = 0, companiesCreated = 0, companiesMatched = 0, missingContact = 0, missingDetail = 0;
     const warnings: string[] = [];
     const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
+    const [settingsRow] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
+    const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => companyKey(x)).filter(Boolean);
     for (const item of relevant) {
       const externalId = `mpsv:${item.portalId}`;
       const title = normalize(item.pozadovanaProfese?.cs || "IT pozice");
       const companyName = normalize(item.zamestnavatel?.nazev || "Neznámý zaměstnavatel");
+      const companyNameKey = companyKey(companyName);
+      if (companyNameKey && blacklist.some((b) => companyNameKey.includes(b) || b.includes(companyNameKey))) {
+        agencySkipped++;
+        continue;
+      }
       const knownCompany = allCompanies.find((company) =>
         sameCompanyIdentity(company, { name: companyName, ico: item.zamestnavatel?.ico || null }).same,
       );
@@ -237,6 +244,7 @@ export async function POST() {
     if (missingDetail) warnings.push(`${missingDetail} zpracovaných MPSV položek nemělo úplný text detailu.`);
     if (limitedByRun) warnings.push(`${limitedByRun} IT shod nebylo zpracováno kvůli limitu jednoho běhu ${MAX_ITEMS_PER_RUN}.`);
     if (skipped) warnings.push(`${skipped} poptávek bylo přeskočeno, protože jsou v koši a znovu se nenačítají.`);
+    if (agencySkipped) warnings.push(`${agencySkipped} poptávek bylo přeskočeno, protože zaměstnavatel je na blacklistu personálních agentur.`);
     if (!relevant.length) warnings.push("V aktuálním souboru nebyla nalezena žádná IT shoda podle filtru rolí.");
     const summary = {
       file: latest,
@@ -246,6 +254,7 @@ export async function POST() {
       created,
       updated,
       skipped,
+      agencySkipped,
       limitedByRun,
       companiesCreated,
       companiesMatched,

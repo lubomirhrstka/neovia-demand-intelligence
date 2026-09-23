@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { sameCompanyIdentity } from "@/lib/matching";
+import { companyKey, sameCompanyIdentity } from "@/lib/matching";
 import {
   companies,
   connectorSources,
@@ -374,10 +374,14 @@ export async function POST() {
   const excluded = (settings?.excludedKeywords || []).map((x) =>
     x.toLowerCase(),
   );
+  const blacklist = (settings?.blacklistedCompanies || [])
+    .map((x) => companyKey(x))
+    .filter(Boolean);
   let found = 0,
     created = 0,
     updated = 0,
     skipped = 0,
+    agencySkipped = 0,
     parsed = 0;
   const [sourceRecord] = await db
     .select()
@@ -494,6 +498,14 @@ export async function POST() {
         } catch {}
       }
       companyName = companyName || "Neznámá firma";
+      const companyNameKey = companyKey(companyName);
+      if (
+        companyNameKey &&
+        blacklist.some((b) => companyNameKey.includes(b) || b.includes(companyNameKey))
+      ) {
+        agencySkipped++;
+        continue;
+      }
       const demandText = detail.text || unavailableDetailText;
       if (!detailUrl)
         warnings.push(`${source.name}: u inzerátu ${title} nebyl nalezen odkaz na detail.`);
@@ -594,6 +606,7 @@ export async function POST() {
     created,
     updated,
     skipped,
+    agencySkipped,
     warnings,
     sources: [...new Set(allSources.map((x) => x.name))],
   });

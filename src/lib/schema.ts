@@ -307,6 +307,10 @@ export const monitorSettings = pgTable("monitor_settings", {
     .$type<string[]>()
     .notNull()
     .default([]),
+  blacklistedCompanies: jsonb("blacklisted_companies")
+    .$type<string[]>()
+    .notNull()
+    .default([]),
   minimumSalary: integer("minimum_salary").notNull().default(80000),
   schedules: jsonb("schedules")
     .$type<{ name: string; cron: string; enabled: boolean }[]>()
