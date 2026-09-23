@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getNameDay, getPublicHolidayName } from "@/lib/czech-calendar";
 import {
   Activity,
   ArrowUpRight,
@@ -6481,6 +6482,13 @@ function CalendarView({ note }: { note: (s: string) => void }) {
       note("Doplňte název záznamu.");
       return;
     }
+    if (dueAt) {
+      const holidayName = getPublicHolidayName(new Date(dueAt));
+      if (holidayName) {
+        note(`Na tento den (${holidayName}) je vyhlášený státní svátek — celý den je blokovaný jako volno. Vyberte prosím jiný termín.`);
+        return;
+      }
+    }
     setSaving(true);
     const response = await fetch("/api/tasks", {
       method: editingId ? "PATCH" : "POST",
@@ -6678,8 +6686,11 @@ function CalendarView({ note }: { note: (s: string) => void }) {
           </small>
         </div>
         <div className={`calendar-board ${mode}`}>
-          {days.map((day) => (
-            <div className="calendar-slot" key={day.toISOString()}>
+          {days.map((day) => {
+            const holidayName = getPublicHolidayName(day);
+            const nameDay = getNameDay(day);
+            return (
+            <div className={`calendar-slot${holidayName ? " public-holiday" : ""}`} key={day.toISOString()}>
               <strong>
                 {day.toLocaleDateString("cs-CZ", {
                   weekday: mode === "month" ? undefined : "long",
@@ -6687,7 +6698,11 @@ function CalendarView({ note }: { note: (s: string) => void }) {
                   month: "numeric",
                 })}
               </strong>
-              {itemsForDay(day).length === 0 ? (
+              {nameDay && <span className="name-day">{nameDay}</span>}
+              {holidayName && <span className="public-holiday-badge">Státní svátek</span>}
+              {holidayName ? (
+                <small>{holidayName} · celý den volno</small>
+              ) : itemsForDay(day).length === 0 ? (
                 <small>Volno</small>
               ) : (
                 itemsForDay(day).map((item) =>
@@ -6709,7 +6724,8 @@ function CalendarView({ note }: { note: (s: string) => void }) {
                 )
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
       {open && (

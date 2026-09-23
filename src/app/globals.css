@@ -2786,6 +2786,30 @@ button.metric:hover {
   color: #809596;
   font-size: 10px;
 }
+.calendar-slot > .name-day {
+  display: block;
+  color: #0c8175;
+  font-size: 10px;
+  margin: -7px 0 8px;
+}
+.calendar-slot.public-holiday {
+  background: #fdf3f0;
+  border-color: #f3cfc3;
+}
+.calendar-slot.public-holiday > strong {
+  color: #a4402c;
+}
+.public-holiday-badge {
+  display: inline-block;
+  background: #f3ddd4;
+  color: #a4402c;
+  font: 700 9px Manrope;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 5px;
+  margin-bottom: 8px;
+}
 .calendar-item {
   position: relative;
   display: grid;
