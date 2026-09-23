@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { companies, contacts, demands } from "@/lib/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -65,8 +65,9 @@ export async function DELETE(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
-  if (!body.id) return NextResponse.json({ error: "Chybí ID poptávky." }, { status: 400 });
-  const [item] = await getDb()
+  const ids = Array.isArray(body.ids) ? body.ids.filter(Boolean) : body.id ? [body.id] : [];
+  if (!ids.length) return NextResponse.json({ error: "Chybí ID poptávky." }, { status: 400 });
+  const items = await getDb()
     .update(demands)
     .set({
       deletedAt: new Date(),
@@ -74,8 +75,8 @@ export async function DELETE(req: Request) {
       deleteReason: body.reason || "Nerelevantní poptávka",
       updatedAt: new Date(),
     })
-    .where(and(eq(demands.id, body.id), eq(demands.ownerId, session.user.id)))
+    .where(and(inArray(demands.id, ids), eq(demands.ownerId, session.user.id)))
     .returning();
-  if (!item) return NextResponse.json({ error: "Poptávka nebyla nalezena." }, { status: 404 });
-  return NextResponse.json({ ok: true, id: item.id });
+  if (!items.length) return NextResponse.json({ error: "Poptávka nebyla nalezena." }, { status: 404 });
+  return NextResponse.json({ ok: true, id: items[0].id, ids: items.map((item) => item.id), count: items.length });
 }

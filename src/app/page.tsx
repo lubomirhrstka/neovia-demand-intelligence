@@ -2666,18 +2666,17 @@ function Demands({
       `Opravdu chcete přesunout do koše ${selectedDemands.length} označených poptávek? Při dalším importu stejného zdroje se znovu nenačtou.`,
     );
     if (!confirmed) return;
-    const results = await Promise.allSettled(
-      selectedDemands.map((demand) =>
-        fetch("/api/demands", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: demand.id, reason: "Hromadně označeno jako nerelevantní" }),
-        }),
-      ),
-    );
-    const okIds = selectedDemands
-      .filter((_, index) => results[index].status === "fulfilled" && (results[index] as PromiseFulfilledResult<Response>).value.ok)
-      .map((demand) => demand.id);
+    const response = await fetch("/api/demands", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selectedDemands.map((demand) => demand.id), reason: "Hromadně označeno jako nerelevantní" }),
+    });
+    if (!response.ok) {
+      note("Označené poptávky se nepodařilo přesunout do koše.");
+      return;
+    }
+    const data = await response.json().catch(() => ({}));
+    const okIds = Array.isArray(data.ids) ? data.ids : selectedDemands.map((demand) => demand.id);
     setRows(rows.filter((row) => !okIds.includes(row.id)));
     setSelectedDemandIds([]);
     note(`Do koše přesunuto ${okIds.length} poptávek.`);
