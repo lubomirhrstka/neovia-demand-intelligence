@@ -3292,6 +3292,9 @@ function Contacts({
     [opportunities, setOpportunities] = useState<DashboardOpportunity[]>([]),
     [activities, setActivities] = useState<ActivityRecord[]>([]),
     [form, setForm] = useState(emptyForm);
+  const [mergeGroup, setMergeGroup] = useState<{ type: "contact" | "company"; items: Array<Contact | CompanyRecord> } | null>(null);
+  const [mergeMasterId, setMergeMasterId] = useState("");
+  const [merging, setMerging] = useState(false);
   const emptyCompanyForm = {
     id: "",
     name: "",
@@ -3630,6 +3633,47 @@ function Contacts({
         return emails.some((email) => itemEmails.includes(email)) || phones.some((phone) => itemPhones.includes(phone)) || sameNameAndCompany;
       })
       .slice(0, 5);
+  const contactDuplicateGroups = () => {
+    const visited = new Set<string>();
+    const groups: Contact[][] = [];
+    contacts.forEach((contact) => {
+      if (visited.has(contact.id)) return;
+      const group = [contact, ...contactDuplicateSignals(contact)];
+      if (group.length > 1) {
+        group.forEach((item) => visited.add(item.id));
+        groups.push(group);
+      }
+    });
+    return groups;
+  };
+  const openMergeGroup = (type: "contact" | "company", items: Array<Contact | CompanyRecord>) => {
+    const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()];
+    setMergeGroup({ type, items: uniqueItems });
+    setMergeMasterId(uniqueItems[0]?.id || "");
+  };
+  const performMerge = async () => {
+    if (!mergeGroup || !mergeMasterId) return;
+    const duplicateIds = mergeGroup.items.map((item) => item.id).filter((id) => id !== mergeMasterId);
+    if (duplicateIds.length === 0) return;
+    setMerging(true);
+    const response = await fetch(mergeGroup.type === "contact" ? "/api/contacts/merge" : "/api/companies/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ masterId: mergeMasterId, duplicateIds }),
+    });
+    setMerging(false);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Sloučení se nepodařilo.");
+      return;
+    }
+    setMergeGroup(null);
+    setMergeMasterId("");
+    setDetail(null);
+    setCompanyDetail(null);
+    load();
+    note(mergeGroup.type === "contact" ? "Kontakty byly sloučeny." : "Firmy byly sloučeny.");
+  };
   const displayedContacts = contacts.filter((contact) => {
     const text = `${contact.name} ${contact.company} ${contact.role} ${contact.email} ${contact.secondaryEmail || ""} ${contact.phone} ${contact.secondaryPhone || ""} ${contact.source}`.toLowerCase();
     const hasContactData = contact.email !== "—" && contact.phone !== "—";
@@ -4078,6 +4122,13 @@ function Contacts({
               {contactDuplicateSignals(c).length > 0 && (
                 <span className="duplicate mini-duplicate">
                   {contactDuplicateSignals(c).length} možná duplicita
+                  <button
+                    type="button"
+                    className="merge-trigger"
+                    onClick={(event) => { event.stopPropagation(); openMergeGroup("contact", [c, ...contactDuplicateSignals(c)]); }}
+                  >
+                    Sloučit
+                  </button>
                 </span>
               )}
               <button className="quiet" onClick={() => openDetail(c)}>
@@ -4132,6 +4183,13 @@ function Contacts({
                 {companyDuplicateSignals(company).length > 0 && (
                   <span className="duplicate mini-duplicate">
                     {companyDuplicateSignals(company).length} možná duplicita
+                    <button
+                      type="button"
+                      className="merge-trigger"
+                      onClick={(event) => { event.stopPropagation(); openMergeGroup("company", [company, ...companyDuplicateSignals(company)]); }}
+                    >
+                      Sloučit
+                    </button>
                   </span>
                 )}
                 <button className="quiet" onClick={() => openCompanyDetail(company)}>
@@ -4430,6 +4488,13 @@ function Contacts({
                       <b>Možná duplicita firmy</b>
                       <span>{companyDuplicateSignals(companyDetail).map((company) => company.name).join(", ")}</span>
                     </div>
+                    <button
+                      type="button"
+                      className="merge-trigger"
+                      onClick={() => openMergeGroup("company", [companyDetail, ...companyDuplicateSignals(companyDetail)])}
+                    >
+                      Sloučit
+                    </button>
                   </div>
                 )}
                 {companyActivities(companyDetail).length === 0 ? (
@@ -4611,6 +4676,52 @@ function Contacts({
               </button>
             </footer>
           </form>
+        </div>
+      )}
+      {mergeGroup && (
+        <div className="modal-backdrop">
+          <div className="modal merge-modal">
+            <header>
+              <div>
+                <p>{mergeGroup.type === "contact" ? "KONTAKTY" : "FIRMY"}</p>
+                <h2>Sloučit duplicitní {mergeGroup.type === "contact" ? "kontakty" : "firmy"}</h2>
+              </div>
+              <button type="button" onClick={() => setMergeGroup(null)}>×</button>
+            </header>
+            <p className="merge-hint">
+              Vyberte, který záznam zůstane jako <b>hlavní (master)</b>. Ostatní se do něj sloučí — jejich poptávky, příležitosti, úkoly a aktivity se přepíšou na hlavní záznam a duplicitní karty se smažou. Prázdná pole na hlavním záznamu se doplní z duplicit.
+            </p>
+            <div className="merge-options">
+              {mergeGroup.items.map((item) => {
+                const isContact = mergeGroup.type === "contact";
+                const label = isContact ? `${(item as Contact).name}` : (item as CompanyRecord).name;
+                const detail = isContact
+                  ? [(item as Contact).company, (item as Contact).email, (item as Contact).phone].filter((v) => v && v !== "—").join(" · ")
+                  : [(item as CompanyRecord).ico ? `IČO ${(item as CompanyRecord).ico}` : "", (item as CompanyRecord).website, (item as CompanyRecord).source].filter(Boolean).join(" · ");
+                return (
+                  <label key={item.id} className={`merge-option ${mergeMasterId === item.id ? "active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="merge-master"
+                      checked={mergeMasterId === item.id}
+                      onChange={() => setMergeMasterId(item.id)}
+                    />
+                    <span>
+                      <b>{label}</b>
+                      <small>{detail || "Bez doplňujících údajů"}</small>
+                    </span>
+                    {mergeMasterId === item.id && <span className="master-tag">Master</span>}
+                  </label>
+                );
+              })}
+            </div>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setMergeGroup(null)}>Zrušit</button>
+              <button type="button" className="primary" disabled={merging} onClick={performMerge}>
+                {merging ? "Slučuji…" : "Sloučit do vybraného"}
+              </button>
+            </footer>
+          </div>
         </div>
       )}
     </>
