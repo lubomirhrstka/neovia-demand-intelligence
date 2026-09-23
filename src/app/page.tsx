@@ -6530,19 +6530,11 @@ function CalendarView({ note }: { note: (s: string) => void }) {
                       role="button"
                       tabIndex={0}
                     >
-                      <span>{item.event.start ? new Date(item.event.start).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : "Google"}</span>
                       <b>{item.event.title}</b>
-                      <small>{openingGoogleEventId === item.event.id ? "Otevírám v aplikaci…" : "Google · kliknutím otevřít v aplikaci"}</small>
                     </div>
                   ) : (
                     <div className="calendar-item" key={item.task.id} onClick={() => openForEdit(item.task)} role="button" tabIndex={0}>
-                      <span>{new Date(item.task.dueAt!).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>
                       <b>{item.task.title}</b>
-                      <small>{[item.task.company, item.task.contactName, item.task.tag].filter(Boolean).join(" · ")}</small>
-                      {item.task.syncedAt && <small>Sync {new Date(item.task.syncedAt).toLocaleString("cs-CZ")}</small>}
-                      <button type="button" onClick={(event) => { event.stopPropagation(); deleteCalendarTask(item.task); }} aria-label="Odstranit záznam">
-                        <Trash2 size={13} />
-                      </button>
                     </div>
                   ),
                 )
