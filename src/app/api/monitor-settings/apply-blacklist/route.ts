@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyKey } from "@/lib/matching";
+import { normalizeCompanyName } from "@/lib/matching";
 import { auditLog, companies, demands, monitorSettings } from "@/lib/schema";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -19,15 +19,15 @@ export async function POST(request: Request) {
     .where(eq(monitorSettings.ownerId, session.user.id))
     .orderBy(desc(monitorSettings.updatedAt))
     .limit(1);
-  const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => companyKey(x)).filter(Boolean);
+  const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => normalizeCompanyName(x)).filter(Boolean);
   if (blacklist.length === 0) {
     return NextResponse.json({ matchedCompanies: [], affectedDemands: 0 });
   }
 
   const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
   const matchedCompanies = allCompanies.filter((company) => {
-    const key = companyKey(company.name);
-    return key && blacklist.some((b) => key.includes(b) || b.includes(key));
+    const key = normalizeCompanyName(company.name);
+    return key && blacklist.some((b) => b.length >= 3 && (key.includes(b) || b.includes(key)));
   });
   if (matchedCompanies.length === 0) {
     return NextResponse.json({ matchedCompanies: [], affectedDemands: 0 });

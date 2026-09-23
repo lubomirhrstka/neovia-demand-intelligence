@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { normalizeCompanyName } from "@/lib/matching";
 import {
   auditLog,
   companies,
@@ -136,10 +137,10 @@ export async function POST(request: Request) {
     .where(eq(monitorSettings.ownerId, session.user.id))
     .orderBy(desc(monitorSettings.updatedAt))
     .limit(1);
-  const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => companyKey(x)).filter(Boolean);
+  const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => normalizeCompanyName(x)).filter(Boolean);
   const isBlacklisted = (name: string) => {
-    const key = companyKey(name);
-    return Boolean(key && blacklist.some((b) => key.includes(b) || b.includes(key)));
+    const key = normalizeCompanyName(name);
+    return Boolean(key && blacklist.some((b) => b.length >= 3 && (key.includes(b) || b.includes(key))));
   };
   if (body.preview) {
     const existingCompanies = await db

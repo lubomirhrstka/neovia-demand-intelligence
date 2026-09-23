@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyKey, sameCompanyIdentity } from "@/lib/matching";
+import { normalizeCompanyName, sameCompanyIdentity } from "@/lib/matching";
 import {
   companies,
   connectorSources,
@@ -375,7 +375,7 @@ export async function POST() {
     x.toLowerCase(),
   );
   const blacklist = (settings?.blacklistedCompanies || [])
-    .map((x) => companyKey(x))
+    .map((x) => normalizeCompanyName(x))
     .filter(Boolean);
   let found = 0,
     created = 0,
@@ -498,10 +498,10 @@ export async function POST() {
         } catch {}
       }
       companyName = companyName || "Neznámá firma";
-      const companyNameKey = companyKey(companyName);
+      const companyNameKey = normalizeCompanyName(companyName);
       if (
         companyNameKey &&
-        blacklist.some((b) => companyNameKey.includes(b) || b.includes(companyNameKey))
+        blacklist.some((b) => b.length >= 3 && (companyNameKey.includes(b) || b.includes(companyNameKey)))
       ) {
         agencySkipped++;
         continue;

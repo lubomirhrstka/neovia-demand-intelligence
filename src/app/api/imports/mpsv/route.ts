@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyKey, sameCompanyIdentity } from "@/lib/matching";
+import { normalizeCompanyName, sameCompanyIdentity } from "@/lib/matching";
 import { companies, connectorSources, contacts, demands, importRuns, monitorSettings, users } from "@/lib/schema";
 import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -193,13 +193,13 @@ export async function POST() {
     const warnings: string[] = [];
     const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
     const [settingsRow] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
-    const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => companyKey(x)).filter(Boolean);
+    const blacklist = (settingsRow?.blacklistedCompanies || []).map((x) => normalizeCompanyName(x)).filter(Boolean);
     for (const item of relevant) {
       const externalId = `mpsv:${item.portalId}`;
       const title = normalize(item.pozadovanaProfese?.cs || "IT pozice");
       const companyName = normalize(item.zamestnavatel?.nazev || "Neznámý zaměstnavatel");
-      const companyNameKey = companyKey(companyName);
-      if (companyNameKey && blacklist.some((b) => companyNameKey.includes(b) || b.includes(companyNameKey))) {
+      const companyNameKey = normalizeCompanyName(companyName);
+      if (companyNameKey && blacklist.some((b) => b.length >= 3 && (companyNameKey.includes(b) || b.includes(companyNameKey)))) {
         agencySkipped++;
         continue;
       }
