@@ -3362,6 +3362,16 @@ function Contacts({
   };
   const emailKey = (value?: string) => normalizedText(value).replace(/\s/g, "");
   const phoneKey = (value?: string) => String(value || "").replace(/\D/g, "");
+  const isGenericImportedContactName = (value: string) => {
+    const key = normalizedText(value);
+    return (
+      !key ||
+      key === "mpsv" ||
+      key === "- mpsv" ||
+      key === "kontakt mpsv" ||
+      /^[a-z]{2,20} mpsv$/.test(key)
+    );
+  };
   const sameCompanyIdentity = (left: CompanyRecord, right: CompanyRecord) => {
     const leftKey = companyIdentityKey(left.name);
     const rightKey = companyIdentityKey(right.name);
@@ -3641,11 +3651,12 @@ function Contacts({
           .map((value) => phoneKey(value))
           .filter((value) => value.length >= 9);
         const sameNameAndCompany =
+          !isGenericImportedContactName(contact.name) &&
+          !isGenericImportedContactName(item.name) &&
           normalizedText(contact.name) === normalizedText(item.name) &&
           companyIdentityKey(contact.company) === companyIdentityKey(item.company);
         return emails.some((email) => itemEmails.includes(email)) || phones.some((phone) => itemPhones.includes(phone)) || sameNameAndCompany;
-      })
-      .slice(0, 5);
+      });
   const contactDuplicateGroups = () => {
     const visited = new Set<string>();
     const groups: Contact[][] = [];
@@ -3715,7 +3726,8 @@ function Contacts({
       (contactFilter === "vše" ||
         (contactFilter === "ověřené" && contact.verified) ||
         (contactFilter === "k ověření" && !contact.verified) ||
-        (contactFilter === "bez údajů" && !hasContactData))
+        (contactFilter === "bez údajů" && !hasContactData) ||
+        (contactFilter === "duplicity" && contactDuplicateSignals(contact).length > 0))
     );
   });
   const displayedCompanies = companies.filter((company) => {
@@ -3953,6 +3965,7 @@ function Contacts({
             <option value="ověřené">Ověřené</option>
             <option value="k ověření">K ověření</option>
             <option value="bez údajů">Bez kompletních údajů</option>
+            <option value="duplicity">Duplicity</option>
           </select>
         ) : (
           <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
@@ -4069,14 +4082,14 @@ function Contacts({
           <button
             type="button"
             onClick={() => {
-              setCrmTab("companies");
-              setCompanyFilter("duplicity");
+              setCrmTab("contacts");
+              setContactFilter("duplicity");
               setCrmSearch("");
             }}
           >
-            <b>{companyDuplicateGroups().length}</b>
+            <b>{contactDuplicateGroups().length}</b>
             <span>duplicitních signálů</span>
-            <small>skupiny podle názvu nebo IČO</small>
+            <small>skupiny kontaktů podle e-mailu nebo telefonu</small>
           </button>
         </div>
       </section>
@@ -4121,6 +4134,39 @@ function Contacts({
                     </small>
                   </div>
                   <button type="button" className="merge-trigger" onClick={() => openMergeGroup("company", group)}>
+                    Sloučit skupinu
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      {crmTab === "contacts" && contactFilter === "duplicity" && (
+        <section className="panel duplicate-groups-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Duplicitní skupiny kontaktů</h2>
+              <p>Skupiny se skládají jen z bezpečných shod: stejný e-mail, stejný telefon nebo negenerické jméno ve stejné firmě.</p>
+            </div>
+            <span className="source-tag">{contactDuplicateGroups().length} skupin</span>
+          </div>
+          {contactDuplicateGroups().length === 0 ? (
+            <div className="empty-state">Aktuálně nevidím žádnou duplicitní skupinu kontaktů.</div>
+          ) : (
+            <div className="duplicate-group-list">
+              {contactDuplicateGroups().map((group) => (
+                <div className="duplicate-group-card" key={group.map((contact) => contact.id).join("-")}>
+                  <div>
+                    <b>{group.map((contact) => contact.name).join(" · ")}</b>
+                    <small>
+                      {group
+                        .map((contact) => [contact.company, contact.email !== "—" ? contact.email : "", contact.phone !== "—" ? contact.phone : ""].filter(Boolean).join(" · "))
+                        .filter(Boolean)
+                        .join(" | ") || "Bez doplňujících údajů"}
+                    </small>
+                  </div>
+                  <button type="button" className="merge-trigger" onClick={() => openMergeGroup("contact", group)}>
                     Sloučit skupinu
                   </button>
                 </div>
