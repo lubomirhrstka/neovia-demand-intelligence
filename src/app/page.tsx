@@ -3348,19 +3348,29 @@ function Contacts({
       .replace(/\bv\.?\s*o\.?\s*s\.?\b/g, " ")
       .replace(/\b(ltd|limited|inc|corp|corporation|gmbh|llc)\b/g, " ")
       .replace(/[^a-z0-9]/g, "");
+  const companyDomainKey = (value?: string | null) => {
+    const text = String(value || "").trim().toLowerCase();
+    const domain = text.match(/https?:\/\/([^/\s]+)/)?.[1] || text.match(/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/)?.[1] || "";
+    return domain.replace(/^www\./, "");
+  };
+  const safeCompanyNameMatch = (leftKey: string, rightKey: string) => {
+    if (leftKey.length <= 3 || rightKey.length <= 3) return false;
+    if (leftKey === rightKey) return true;
+    const shorter = leftKey.length <= rightKey.length ? leftKey : rightKey;
+    const longer = leftKey.length > rightKey.length ? leftKey : rightKey;
+    return shorter.length >= 8 && longer.length - shorter.length <= 4 && longer.includes(shorter);
+  };
   const emailKey = (value?: string) => normalizedText(value).replace(/\s/g, "");
   const phoneKey = (value?: string) => String(value || "").replace(/\D/g, "");
   const sameCompanyIdentity = (left: CompanyRecord, right: CompanyRecord) => {
     const leftKey = companyIdentityKey(left.name);
     const rightKey = companyIdentityKey(right.name);
-    const sameName =
-      leftKey.length > 3 &&
-      rightKey.length > 3 &&
-      (leftKey === rightKey ||
-        (Math.min(leftKey.length, rightKey.length) >= 5 &&
-          (leftKey.includes(rightKey) || rightKey.includes(leftKey))));
+    const sameName = safeCompanyNameMatch(leftKey, rightKey);
     const sameIco = Boolean(left.ico && right.ico && normalized(left.ico) === normalized(right.ico));
-    return sameName || sameIco;
+    const leftDomain = companyDomainKey(left.website);
+    const rightDomain = companyDomainKey(right.website);
+    const sameDomain = Boolean(leftDomain && rightDomain && leftDomain === rightDomain);
+    return sameName || sameIco || sameDomain;
   };
   const matches = contacts.filter(
     (c) =>
@@ -4086,6 +4096,39 @@ function Contacts({
           <span>{displayedCompanies.length}/{companies.length}</span>
         </button>
       </div>
+      {crmTab === "companies" && companyFilter === "duplicity" && (
+        <section className="panel duplicate-groups-panel">
+          <div className="panel-header">
+            <div>
+              <h2>Duplicitní skupiny firem</h2>
+              <p>Každý řádek je jedna skupina, kterou můžete rovnou sloučit do vybraného master záznamu.</p>
+            </div>
+            <span className="source-tag">{companyDuplicateGroups().length} skupin</span>
+          </div>
+          {companyDuplicateGroups().length === 0 ? (
+            <div className="empty-state">Aktuálně nevidím žádnou duplicitní skupinu firem.</div>
+          ) : (
+            <div className="duplicate-group-list">
+              {companyDuplicateGroups().map((group) => (
+                <div className="duplicate-group-card" key={group.map((company) => company.id).join("-")}>
+                  <div>
+                    <b>{group.map((company) => company.name).join(" · ")}</b>
+                    <small>
+                      {group
+                        .map((company) => [company.ico ? `IČO ${company.ico}` : "", company.website, company.source].filter(Boolean).join(" · "))
+                        .filter(Boolean)
+                        .join(" | ") || "Bez doplňujících údajů"}
+                    </small>
+                  </div>
+                  <button type="button" className="merge-trigger" onClick={() => openMergeGroup("company", group)}>
+                    Sloučit skupinu
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {crmTab === "contacts" && (
       <section className="panel contact-table">
         <div className="contact-head">

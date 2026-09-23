@@ -117,6 +117,17 @@ export const companyKey = (value: string) =>
     .replace(/\bv\.?\s*o\.?\s*s\.?\b/g, " ")
     .replace(/\b(ltd|limited|inc|corp|corporation|gmbh|llc)\b/g, " ")
     .replace(/[^a-z0-9]/g, "");
+
+const isSafeCompanyNameMatch = (leftKey: string, rightKey: string) => {
+  if (leftKey.length <= 3 || rightKey.length <= 3) return false;
+  if (leftKey === rightKey) return true;
+  // Volné "obsahuje" dělalo falešné duplicity u krátkých názvů typu PRO/IT.
+  // Částečnou shodu dovolíme jen u delších názvů s malým rozdílem délky.
+  const shorter = leftKey.length <= rightKey.length ? leftKey : rightKey;
+  const longer = leftKey.length > rightKey.length ? leftKey : rightKey;
+  return shorter.length >= 8 && longer.length - shorter.length <= 4 && longer.includes(shorter);
+};
+
 export const companyDomainFrom = (value: string) => {
   const text = companyNormalize(value).toLowerCase();
   const url = text.match(/https?:\/\/([^/\s]+)/)?.[1] || text.match(/(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/)?.[1] || "";
@@ -129,11 +140,7 @@ export function sameCompanyIdentity(
 ) {
   const leftKey = companyKey(left.name);
   const rightKey = companyKey(right.name);
-  const sameName =
-    leftKey.length > 3 &&
-    rightKey.length > 3 &&
-    (leftKey === rightKey ||
-      (Math.min(leftKey.length, rightKey.length) >= 5 && (leftKey.includes(rightKey) || rightKey.includes(leftKey))));
+  const sameName = isSafeCompanyNameMatch(leftKey, rightKey);
   const sameIco = Boolean(left.ico && right.ico && companyNormalize(left.ico) === companyNormalize(right.ico));
   const leftDomain = companyDomainFrom(left.website || "");
   const rightDomain = companyDomainFrom(right.website || "");
