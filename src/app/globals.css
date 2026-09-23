@@ -306,6 +306,46 @@
   letter-spacing: 0.4px;
   color: #819394;
 }
+.contact-action-link,
+.muted-contact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  min-width: 0;
+  color: #08796d;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.contact-action-link {
+  border-bottom: 1px solid rgba(8, 121, 109, 0.28);
+}
+.contact-action-link:hover,
+.contact-action-link:focus-visible {
+  color: #064f49;
+  border-bottom-color: #064f49;
+}
+.muted-contact {
+  color: #829697;
+  font-weight: 650;
+}
+.quick-contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 23px 16px;
+  background: #f6f9f8;
+}
+.quick-contact-actions .contact-action-link,
+.quick-contact-actions .muted-contact,
+.quick-contact-actions .entity-link {
+  border: 1px solid #cfe3df;
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  text-decoration: none;
+}
 .entity-link {
   border: 0;
   background: transparent;
@@ -1555,6 +1595,27 @@ button.metric:hover {
   padding: 12px 18px;
   border-top: 1px solid #edf1f0;
 }
+.interactive-row {
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+.interactive-row:hover,
+.interactive-row:focus-visible,
+.contact-row:hover {
+  background: #f8fbfa;
+  box-shadow: inset 3px 0 0 #0b8177;
+}
+.row-arrow {
+  display: inline-flex;
+  justify-content: flex-end;
+}
 .demand-row > div {
   display: flex;
   align-items: center;
@@ -2173,7 +2234,8 @@ button.metric:hover {
   display: grid;
   gap: 4px;
 }
-.contact-data span {
+.contact-data span,
+.contact-data a {
   font-size: 10px;
   color: #547174;
   display: flex;

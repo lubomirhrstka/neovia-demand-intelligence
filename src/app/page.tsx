@@ -1436,7 +1436,15 @@ function Dashboard({
             </div>
           ) : (
             visibleDemands.slice(0, 3).map((d) => (
-              <div className="demand-row" key={d.id}>
+              <button
+                className="demand-row interactive-row"
+                key={d.id}
+                type="button"
+                onClick={() => {
+                  window.localStorage.setItem("neovia-open-demand", d.id);
+                  goTo("Poptávky");
+                }}
+              >
                 <div>
                   <span className="company">{(d.company || "?")[0]}</span>
                   <div>
@@ -1452,10 +1460,10 @@ function Dashboard({
                   <i style={{ width: `${Number(d.relevanceScore || 0)}%` }} />
                   {Number(d.relevanceScore || 0)}%
                 </span>
-                <button className="quiet" onClick={() => goTo("Poptávky")}>
+                <span className="quiet row-arrow" aria-hidden="true">
                   <MoreHorizontal size={18} />
-                </button>
-              </div>
+                </span>
+              </button>
             ))
           )}
         </section>
@@ -1976,7 +1984,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                     <div>
                       <span>Odesílatel</span>
                       <b>{selectedEmail.from}</b>
-                      <small>{selectedEmail.fromEmail}</small>
+                      <small><EmailLink value={selectedEmail.fromEmail} /></small>
                     </div>
                     <div>
                       <span>Datum</span>
@@ -1986,8 +1994,21 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                       <span>Vazba na CRM</span>
                       {emailMatch ? (
                         <>
-                          <b>{emailMatch.firstName} {emailMatch.lastName}</b>
-                          <small>{emailMatch.company || "Firma neuvedena"} · {emailMatch.role || "Role neuvedena"}</small>
+                          <button
+                            type="button"
+                            className="entity-link strong-link"
+                            onClick={() => {
+                              window.localStorage.setItem("neovia-open-contact", emailMatch.id);
+                              setSelectedEmail(null);
+                              setEmailMatch(null);
+                              goTo("Kontakty");
+                            }}
+                          >
+                            {emailMatch.firstName} {emailMatch.lastName}
+                          </button>
+                          <small>
+                            {emailMatch.company || "Firma neuvedena"} · {emailMatch.role || "Role neuvedena"}
+                          </small>
                         </>
                       ) : (
                         <>
@@ -2344,6 +2365,35 @@ const normalizePhoneHref = (value: string) => {
   if (compact.startsWith("00420") && compact.length === 14) return `+${compact.slice(2)}`;
   if (compact.startsWith("420") && compact.length === 12) return `+${compact}`;
   return `+420${compact}`;
+};
+const isFilledValue = (value?: string | null) => Boolean(value && value.trim() && value.trim() !== "—");
+const EmailLink = ({ value }: { value?: string | null }) =>
+  isFilledValue(value) ? (
+    <a className="contact-action-link" href={`mailto:${value}`}>
+      <Mail size={14} />
+      {value}
+    </a>
+  ) : (
+    <span className="muted-contact">E-mail není uveden</span>
+  );
+const PhoneLink = ({ value }: { value?: string | null }) =>
+  isFilledValue(value) ? (
+    <a className="contact-action-link" href={`tel:${normalizePhoneHref(value!)}`}>
+      <Phone size={14} />
+      {value}
+    </a>
+  ) : (
+    <span className="muted-contact">Telefon není uveden</span>
+  );
+const WebsiteLink = ({ value }: { value?: string | null }) => {
+  if (!isFilledValue(value)) return <span className="muted-contact">Web není uveden</span>;
+  const href = /^https?:\/\//i.test(value!) ? value! : `https://${value}`;
+  return (
+    <a className="contact-action-link" href={href} target="_blank" rel="noreferrer">
+      <ArrowUpRight size={14} />
+      {value}
+    </a>
+  );
 };
 const HighlightedDemandText = ({
   text,
@@ -3015,6 +3065,14 @@ function Demands({
                 </button>
               </span>
               <span>
+                <b>E-mail</b>
+                <EmailLink value={selected.contactEmail} />
+              </span>
+              <span>
+                <b>Telefon</b>
+                <PhoneLink value={selected.contactPhone} />
+              </span>
+              <span>
                 <b>Import</b>
                 {new Date(selected.importedAt).toLocaleString("cs-CZ")}
               </span>
@@ -3204,11 +3262,11 @@ function Demands({
               </span>
               <span>
                 <b>E-mail</b>
-                {contactDetail.contactEmail || "E-mail není uveden"}
+                <EmailLink value={contactDetail.contactEmail} />
               </span>
               <span>
                 <b>Telefon</b>
-                {contactDetail.contactPhone || "Telefon není uveden"}
+                <PhoneLink value={contactDetail.contactPhone} />
               </span>
               <span>
                 <b>Zdroj</b>
@@ -4210,14 +4268,8 @@ function Contacts({
                 </div>
               </button>
               <div className="contact-data">
-                <span>
-                  <Mail size={14} />
-                  {c.email}
-                </span>
-                <span>
-                  <Phone size={14} />
-                  {c.phone}
-                </span>
+                <EmailLink value={c.email} />
+                <PhoneLink value={c.phone} />
               </div>
               <div>
                 {c.duplicates ? (
@@ -4343,6 +4395,14 @@ function Contacts({
                   <b>{activeDetail.source}</b>
                   <small>zdroj kontaktu</small>
                 </div>
+              </div>
+            )}
+            {activeDetail && (
+              <div className="quick-contact-actions">
+                <EmailLink value={activeDetail.email} />
+                <PhoneLink value={activeDetail.phone} />
+                {activeDetail.secondaryEmail && <EmailLink value={activeDetail.secondaryEmail} />}
+                {activeDetail.secondaryPhone && <PhoneLink value={activeDetail.secondaryPhone} />}
               </div>
             )}
             {activeDetail && (
@@ -4527,6 +4587,19 @@ function Contacts({
                   <b>{companyOpportunities(companyDetail).length || companyDetail.opportunitiesCount || 0}</b>
                   <small>příležitostí</small>
                 </div>
+              </div>
+            )}
+            {companyDetail && (
+              <div className="quick-contact-actions">
+                <WebsiteLink value={companyDetail.website} />
+                <button type="button" className="entity-link" onClick={() => openCompanyDemands(companyDetail.name)}>
+                  Otevřít poptávky firmy
+                </button>
+                {companyOpportunities(companyDetail).length > 0 && (
+                  <button type="button" className="entity-link" onClick={() => openOpportunity(companyOpportunities(companyDetail)[0].id)}>
+                    Otevřít pipeline
+                  </button>
+                )}
               </div>
             )}
             {companyDetail && (
