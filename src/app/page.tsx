@@ -7478,6 +7478,43 @@ function ImportHistory({ runs }: { runs: ImportRunRecord[] }) {
 function MonitorSettings({ note }: { note: (s: string) => void }) {
   const [data, setData] = useState<any>(null),
     [saving, setSaving] = useState(false);
+  const [blacklistPreview, setBlacklistPreview] = useState<{ matchedCompanies: string[]; affectedDemands: number } | null>(null);
+  const [applyingBlacklist, setApplyingBlacklist] = useState(false);
+  const previewBlacklist = async () => {
+    setApplyingBlacklist(true);
+    const r = await fetch("/api/monitor-settings/apply-blacklist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dryRun: true }),
+    });
+    setApplyingBlacklist(false);
+    if (!r.ok) {
+      note("Kontrolu se nepodařilo provést.");
+      return;
+    }
+    const result = await r.json();
+    if (result.affectedDemands === 0) {
+      note("Žádné existující poptávky neodpovídají blacklistu — nic k odstranění.");
+      return;
+    }
+    setBlacklistPreview(result);
+  };
+  const confirmApplyBlacklist = async () => {
+    setApplyingBlacklist(true);
+    const r = await fetch("/api/monitor-settings/apply-blacklist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    setApplyingBlacklist(false);
+    setBlacklistPreview(null);
+    if (!r.ok) {
+      note("Odstranění se nepodařilo.");
+      return;
+    }
+    const result = await r.json();
+    note(`Odstraněno ${result.affectedDemands} poptávek od firem na blacklistu (${result.matchedCompanies.join(", ")}).`);
+  };
   useEffect(() => {
     fetch("/api/monitor-settings")
       .then((r) => (r.ok ? r.json() : null))
@@ -7550,6 +7587,15 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
             }
           />
           <small>Poptávky od těchto firem se při automatickém importu přeskočí (porovnává se podle názvu bez právní formy).</small>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginTop: 8 }}
+            disabled={applyingBlacklist}
+            onClick={previewBlacklist}
+          >
+            {applyingBlacklist ? "Kontroluji…" : "Použít i na minulé importy"}
+          </button>
         </label>
         <label>
           Lokality
@@ -7610,6 +7656,31 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
       <button className="primary" disabled={saving} onClick={save}>
         {saving ? "Ukládám…" : "Uložit nastavení monitoru"}
       </button>
+      {blacklistPreview && (
+        <div className="modal-backdrop">
+          <div className="modal delete-choice">
+            <header>
+              <div>
+                <p>ZDROJE</p>
+                <h2>Odstranit poptávky od agentur na blacklistu?</h2>
+              </div>
+              <button type="button" onClick={() => setBlacklistPreview(null)}>×</button>
+            </header>
+            <p className="merge-hint">
+              <b>Tuto akci nelze vrátit zpět.</b> Bude odstraněno <b>{blacklistPreview.affectedDemands}</b>{" "}
+              {blacklistPreview.affectedDemands === 1 ? "poptávka" : "poptávek"} od těchto firem:
+              <br />
+              {blacklistPreview.matchedCompanies.join(", ")}
+            </p>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setBlacklistPreview(null)}>Zrušit</button>
+              <button type="button" className="danger" disabled={applyingBlacklist} onClick={confirmApplyBlacklist}>
+                {applyingBlacklist ? "Odstraňuji…" : `Ano, odstranit (${blacklistPreview.affectedDemands})`}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
