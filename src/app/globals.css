@@ -1594,6 +1594,14 @@ button.metric:hover {
   align-items: center;
   padding: 12px 18px;
   border-top: 1px solid #edf1f0;
+  cursor: pointer;
+}
+.list-row,
+.contact-row,
+.mini-task,
+.pool article,
+.task {
+  cursor: pointer;
 }
 .interactive-row {
   width: 100%;

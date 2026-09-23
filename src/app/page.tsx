@@ -994,8 +994,12 @@ function Header({ title, action }: { title: string; action: string }) {
   );
 }
 function Row({ d, note }: { d: Demand; note: (s: string) => void }) {
+  const openDemand = () => {
+    window.localStorage.setItem("neovia-open-demand", d.id);
+    goTo("Poptávky");
+  };
   return (
-    <div className="demand-row">
+    <div className="demand-row" onClick={openDemand} role="button" tabIndex={0}>
       <div>
         <span className="company">{d.company[0]}</span>
         <div>
@@ -1012,7 +1016,7 @@ function Row({ d, note }: { d: Demand; note: (s: string) => void }) {
       </span>
       <button
         className="quiet"
-        onClick={() => note(`${d.id} otevřena v detailu.`)}
+        onClick={(event) => { event.stopPropagation(); openDemand(); }}
       >
         <MoreHorizontal size={18} />
       </button>
@@ -1493,10 +1497,10 @@ function Dashboard({
             </div>
           )}
           {todayTasks.slice(0, 3).map((t, i) => (
-            <div className="mini-task" key={t.id}>
-              <button onClick={() => completeDashboardTask(t)} />
+            <div className="mini-task" key={t.id} onClick={() => goTo("Úkoly")} role="button" tabIndex={0}>
+              <button onClick={(event) => { event.stopPropagation(); completeDashboardTask(t); }} />
               <div>
-                <button className="link-action task-title-action" type="button" onClick={() => goTo("Úkoly")}>
+                <button className="link-action task-title-action" type="button" onClick={(event) => { event.stopPropagation(); goTo("Úkoly"); }}>
                   {t.title}
                 </button>
                 <small>
@@ -1554,8 +1558,8 @@ function Dashboard({
             </div>
           ) : (
             activities.slice(0, 4).map((activity) => (
-              <div className="mini-task" key={activity.id}>
-                <button onClick={() => goTo("Kontakty")} />
+              <div className="mini-task" key={activity.id} onClick={() => goTo("Kontakty")} role="button" tabIndex={0}>
+                <button onClick={(event) => { event.stopPropagation(); goTo("Kontakty"); }} />
                 <div>
                   <b>{activity.subject}</b>
                   <small>
@@ -2960,19 +2964,20 @@ function Demands({
           displayed.map((d) => {
             const tags = keywordPool(d);
             return (
-            <div className="list-row" key={d.id}>
+            <div className="list-row" key={d.id} onClick={() => setSelected(d)} role="button" tabIndex={0}>
               <div className="demand-cell">
                 <input
                   type="checkbox"
                   checked={selectedDemandIds.includes(d.id)}
                   onChange={() => toggleDemandSelection(d.id)}
+                  onClick={(event) => event.stopPropagation()}
                   aria-label={`Označit poptávku ${d.role || d.title}`}
                 />
                 <div>
                 <button
                   className="demand-title-link"
                   type="button"
-                  onClick={() => setSelected(d)}
+                  onClick={(event) => { event.stopPropagation(); setSelected(d); }}
                 >
                   {d.role || d.title}
                 </button>
@@ -4250,7 +4255,7 @@ function Contacts({
           </div>
         ) : (
           displayedContacts.map((c) => (
-            <div className="contact-row" key={c.id || c.email}>
+            <div className="contact-row" key={c.id || c.email} onClick={() => openDetail(c)} role="button" tabIndex={0}>
               <button className="person person-link" onClick={() => openDetail(c)}>
                 <span className="avatar color">
                   {c.name
@@ -4267,7 +4272,7 @@ function Contacts({
                   <span className="source-tag">{c.source}</span>
                 </div>
               </button>
-              <div className="contact-data">
+              <div className="contact-data" onClick={(event) => event.stopPropagation()}>
                 <EmailLink value={c.email} />
                 <PhoneLink value={c.phone} />
               </div>
@@ -4318,7 +4323,7 @@ function Contacts({
             </div>
           ) : (
             displayedCompanies.map((company) => (
-              <div className="contact-row company-row" key={company.id}>
+              <div className="contact-row company-row" key={company.id} onClick={() => openCompanyDetail(company)} role="button" tabIndex={0}>
                 <button className="person person-link" onClick={() => openCompanyDetail(company)}>
                   <span className="avatar blue">
                     {company.name
@@ -4959,6 +4964,7 @@ function Pool({ note }: { note: (s: string) => void }) {
       }[]
     >([]),
     [open, setOpen] = useState(false),
+    [editingId, setEditingId] = useState<string | null>(null),
     [form, setForm] = useState({
       name: "",
       role: "",
@@ -4973,20 +4979,47 @@ function Pool({ note }: { note: (s: string) => void }) {
   useEffect(() => {
     load();
   }, []);
+  const openEdit = (c: { id: string; name: string; role: string; skills: string[]; location: string | null; availability: string | null }) => {
+    setEditingId(c.id);
+    setForm({
+      name: c.name,
+      role: c.role,
+      skills: c.skills.join(", "),
+      location: c.location || "",
+      availability: c.availability || "",
+    });
+    setOpen(true);
+  };
+  const deleteCapacity = async (id: string) => {
+    if (!window.confirm("Opravdu chcete tuto kapacitu odstranit?")) return;
+    const r = await fetch("/api/capacities", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!r.ok) {
+      note("Kapacitu se nepodařilo odstranit.");
+      return;
+    }
+    setOpen(false);
+    load();
+    note("Kapacita byla odstraněna.");
+  };
   const save = async () => {
     const r = await fetch("/api/capacities", {
-      method: "POST",
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify(editingId ? { ...form, id: editingId } : form),
     });
     if (!r.ok) {
       note("Doplňte jméno a roli kapacity.");
       return;
     }
     setOpen(false);
+    setEditingId(null);
     setForm({ name: "", role: "", skills: "", location: "", availability: "" });
     load();
-    note("Kapacita byla uložena.");
+    note(editingId ? "Kapacita byla upravena." : "Kapacita byla uložena.");
   };
   return (
     <>
@@ -4998,7 +5031,7 @@ function Pool({ note }: { note: (s: string) => void }) {
             Párujte skutečně evidované specialisty s obchodními příležitostmi.
           </small>
         </div>
-        <button className="primary" onClick={() => setOpen(true)}>
+        <button className="primary" onClick={() => { setEditingId(null); setForm({ name: "", role: "", skills: "", location: "", availability: "" }); setOpen(true); }}>
           <Plus size={17} />
           Přidat kapacitu
         </button>
@@ -5010,7 +5043,7 @@ function Pool({ note }: { note: (s: string) => void }) {
       ) : (
         <div className="pool">
           {rows.map((c) => (
-            <article key={c.id}>
+            <article key={c.id} onClick={() => openEdit(c)} role="button" tabIndex={0}>
               <div>
                 <span className="avatar blue">
                   {c.name
@@ -5029,7 +5062,7 @@ function Pool({ note }: { note: (s: string) => void }) {
               </section>
               <footer>
                 <small>{c.location || "Lokalita neuvedena"}</small>
-                <button onClick={() => goTo("Poptávky")}>
+                <button onClick={(event) => { event.stopPropagation(); goTo("Poptávky"); }}>
                   Najít poptávky <ArrowUpRight size={15} />
                 </button>
               </footer>
@@ -5048,10 +5081,10 @@ function Pool({ note }: { note: (s: string) => void }) {
           >
             <header>
               <div>
-                <p>NOVÁ KAPACITA</p>
-                <h2>Specialista</h2>
+                <p>{editingId ? "DETAIL KAPACITY" : "NOVÁ KAPACITA"}</p>
+                <h2>{editingId ? form.name : "Specialista"}</h2>
               </div>
-              <button type="button" onClick={() => setOpen(false)}>
+              <button type="button" onClick={() => { setOpen(false); setEditingId(null); }}>
                 ×
               </button>
             </header>
@@ -5079,11 +5112,16 @@ function Pool({ note }: { note: (s: string) => void }) {
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setOpen(false)}
+                onClick={() => { setOpen(false); setEditingId(null); }}
               >
                 Zrušit
               </button>
-              <button className="primary">Uložit kapacitu</button>
+              {editingId && (
+                <button type="button" className="danger" onClick={() => deleteCapacity(editingId)}>
+                  Odstranit
+                </button>
+              )}
+              <button className="primary">{editingId ? "Uložit změny" : "Uložit kapacitu"}</button>
             </footer>
           </form>
         </div>
@@ -6210,12 +6248,15 @@ function Tasks({ note }: { note: (s: string) => void }) {
               <div
                 className={task.status === "done" ? "task done" : "task"}
                 key={task.id}
+                onClick={() => openTaskEditor(task)}
+                role="button"
+                tabIndex={0}
               >
-                <button onClick={() => toggleTask(task)}>
+                <button onClick={(event) => { event.stopPropagation(); toggleTask(task); }}>
                   {task.status === "done" && <Check size={14} />}
                 </button>
                 <div>
-                  <button className="link-action task-title-action" type="button" onClick={() => openTaskEditor(task)}>
+                  <button className="link-action task-title-action" type="button" onClick={(event) => { event.stopPropagation(); openTaskEditor(task); }}>
                     {task.title}
                   </button>
                   <small>
@@ -6236,7 +6277,7 @@ function Tasks({ note }: { note: (s: string) => void }) {
                     <button
                       className="link-action"
                       type="button"
-                      onClick={() => openOpportunity(task.opportunityId!)}
+                      onClick={(event) => { event.stopPropagation(); openOpportunity(task.opportunityId!); }}
                     >
                       Otevřít obchodní kartu
                     </button>
@@ -6245,7 +6286,7 @@ function Tasks({ note }: { note: (s: string) => void }) {
                     <button
                       className="link-action"
                       type="button"
-                      onClick={() => openCompany(task.company!)}
+                      onClick={(event) => { event.stopPropagation(); openCompany(task.company!); }}
                     >
                       Otevřít firmu
                     </button>
@@ -6255,7 +6296,7 @@ function Tasks({ note }: { note: (s: string) => void }) {
                       className="link-action"
                       type="button"
                       disabled={calendarSyncingTask === task.id}
-                      onClick={() => syncTaskToGoogleCalendar(task)}
+                      onClick={(event) => { event.stopPropagation(); syncTaskToGoogleCalendar(task); }}
                     >
                       {calendarSyncingTask === task.id ? "Posílám do kalendáře…" : "Přidat do Google kalendáře"}
                     </button>
