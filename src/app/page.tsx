@@ -3295,6 +3295,8 @@ function Contacts({
   const [mergeGroup, setMergeGroup] = useState<{ type: "contact" | "company"; items: Array<Contact | CompanyRecord> } | null>(null);
   const [mergeMasterId, setMergeMasterId] = useState("");
   const [merging, setMerging] = useState(false);
+  const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
+  const [deletingContact, setDeletingContact] = useState(false);
   const emptyCompanyForm = {
     id: "",
     name: "",
@@ -3673,6 +3675,26 @@ function Contacts({
     setCompanyDetail(null);
     load();
     note(mergeGroup.type === "contact" ? "Kontakty byly sloučeny." : "Firmy byly sloučeny.");
+  };
+  const performDeleteContact = async () => {
+    if (!contactToDelete) return;
+    setDeletingContact(true);
+    const response = await fetch("/api/contacts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: contactToDelete.id }),
+    });
+    setDeletingContact(false);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      note(data.error || "Kontakt se nepodařilo smazat.");
+      return;
+    }
+    setContactToDelete(null);
+    setOpen(false);
+    setDetail(null);
+    load();
+    note("Kontakt byl smazán.");
   };
   const displayedContacts = contacts.filter((contact) => {
     const text = `${contact.name} ${contact.company} ${contact.role} ${contact.email} ${contact.secondaryEmail || ""} ${contact.phone} ${contact.secondaryPhone || ""} ${contact.source}`.toLowerCase();
@@ -4362,6 +4384,15 @@ function Contacts({
                   Připravit e-mail
                 </button>
               )}
+              {form.id && (
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => setContactToDelete(activeDetail || (contacts.find((c) => c.id === form.id) ?? null))}
+                >
+                  Smazat kontakt
+                </button>
+              )}
               <button type="submit" className="primary">
                 {form.id ? "Uložit změny" : "Založit kartu"}
               </button>
@@ -4719,6 +4750,33 @@ function Contacts({
               <button type="button" className="secondary" onClick={() => setMergeGroup(null)}>Zrušit</button>
               <button type="button" className="primary" disabled={merging} onClick={performMerge}>
                 {merging ? "Slučuji…" : "Sloučit do vybraného"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+      {contactToDelete && (
+        <div className="modal-backdrop">
+          <div className="modal delete-choice">
+            <header>
+              <div>
+                <p>KONTAKTY</p>
+                <h2>Smazat „{contactToDelete.name}"</h2>
+              </div>
+              <button type="button" onClick={() => setContactToDelete(null)}>×</button>
+            </header>
+            <p className="merge-hint">
+              <b>Tuto akci nelze vrátit zpět.</b> Kontakt bude trvale odstraněn.
+              {(contactDemands(contactToDelete).length > 0 || contactActivities(contactToDelete).length > 0) && (
+                <>
+                  {" "}Má navázáno {contactDemands(contactToDelete).length} poptávek a {contactActivities(contactToDelete).length} aktivit — tyto záznamy zůstanou zachované, jen se od kontaktu odpojí.
+                </>
+              )}
+            </p>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setContactToDelete(null)}>Zrušit</button>
+              <button type="button" className="danger" disabled={deletingContact} onClick={performDeleteContact}>
+                {deletingContact ? "Mažu…" : "Ano, smazat kontakt"}
               </button>
             </footer>
           </div>

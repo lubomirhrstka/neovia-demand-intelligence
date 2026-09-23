@@ -1352,6 +1352,22 @@ body {
 .primary:hover {
   background: #095f58;
 }
+button.danger {
+  border: 0;
+  background: #fdecec;
+  color: #b3261e;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font: 700 11px Manrope;
+  cursor: pointer;
+  margin-right: auto;
+}
+button.danger:hover {
+  background: #f9d5d3;
+}
+.delete-choice .merge-hint b {
+  color: #b3261e;
+}
 .focus {
   background: #e5f4f0;
   border: 1px solid #cde9e2;

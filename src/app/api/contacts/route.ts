@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { sameCompanyIdentity } from "@/lib/matching";
-import { auditLog, companies, contactDuplicates, contacts } from "@/lib/schema";
+import { auditLog, activities, companies, contactDuplicates, contacts, demands, opportunities, tasks } from "@/lib/schema";
 import { and, desc, eq, or, type SQL } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -89,4 +89,23 @@ export async function PATCH(request: Request) {
   const [updated] = await db.update(contacts).set({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, email, secondaryEmail, phone, secondaryPhone, source: sourceTag, companyId: company.id, verified: Boolean(body.verified), updatedAt: new Date() }).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).returning();
   await db.insert(auditLog).values({ entityType: "contact", entityId: updated.id, action: "updated", before: current, after: updated, actorId: user.id });
   return NextResponse.json({ ...updated, company: company.name, companyId: company.id });
+}
+
+export async function DELETE(request: Request) {
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
+  const body = await request.json();
+  if (!body.id) return NextResponse.json({ error: "Chybí ID kontaktu." }, { status: 400 });
+  const db = getDb();
+  const [current] = await db.select().from(contacts).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).limit(1);
+  if (!current) return NextResponse.json({ error: "Kontakt nebyl nalezen." }, { status: 404 });
+
+  await db.update(demands).set({ contactId: null, updatedAt: new Date() }).where(eq(demands.contactId, current.id));
+  await db.update(opportunities).set({ contactId: null, updatedAt: new Date() }).where(eq(opportunities.contactId, current.id));
+  await db.update(tasks).set({ contactId: null, updatedAt: new Date() }).where(eq(tasks.contactId, current.id));
+  await db.update(activities).set({ contactId: null }).where(eq(activities.contactId, current.id));
+
+  await db.insert(auditLog).values({ entityType: "contact", entityId: current.id, action: "deleted", before: current, actorId: user.id });
+  await db.delete(contacts).where(and(eq(contacts.id, current.id), eq(contacts.ownerId, user.id)));
+  return NextResponse.json({ ok: true });
 }
