@@ -143,12 +143,14 @@ function locationOf(item: MpsvItem) {
 function contactFrom(item: MpsvItem) {
   const primary = item.prvniKontaktSeZamestnavatelem?.komuSeHlasit;
   const workplace = item.mistoVykonuPrace?.pracoviste?.[0];
-  const fullName = normalize([primary?.jmeno, primary?.prijmeni].filter(Boolean).join(" ")) || "Kontakt MPSV";
+  const fullName = normalize([primary?.jmeno, primary?.prijmeni].filter(Boolean).join(" "));
+  const hasNamedPerson = Boolean(normalize(primary?.jmeno) || normalize(primary?.prijmeni));
   return {
     email: normalize(primary?.email || workplace?.email).toLowerCase(),
     telefon: normalize(primary?.telefon || workplace?.telefon),
-    jmeno: fullName,
+    jmeno: fullName || "Kontakt MPSV",
     role: normalize(primary?.poziceVeSpolecnosti),
+    hasNamedPerson,
   };
 }
 function salaryText(item: MpsvItem) {
@@ -189,7 +191,7 @@ export async function POST() {
     const matchedRows = allRows.filter(item => isItRole(item.pozadovanaProfese?.cs || ""));
     const relevant = matchedRows.slice(0, MAX_ITEMS_PER_RUN);
     const limitedByRun = Math.max(0, matchedRows.length - relevant.length);
-    let created = 0, updated = 0, skipped = 0, agencySkipped = 0, contactDuplicates = 0, contactsCreated = 0, companiesCreated = 0, companiesMatched = 0, missingContact = 0, missingDetail = 0;
+    let created = 0, updated = 0, skipped = 0, agencySkipped = 0, contactDuplicates = 0, contactsCreated = 0, companiesCreated = 0, companiesMatched = 0, missingContact = 0, genericContactSkipped = 0, missingDetail = 0;
     const warnings: string[] = [];
     const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
     const [settingsRow] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
@@ -222,11 +224,24 @@ export async function POST() {
       let contactId: string | undefined;
       if (contactData?.email || contactData?.telefon) {
         const contactRules = [];
-        if (contactData.email) contactRules.push(eq(contacts.email, contactData.email.trim().toLowerCase()));
-        if (contactData.telefon) contactRules.push(eq(contacts.phone, contactData.telefon.trim()));
+        if (contactData.email) {
+          const email = contactData.email.trim().toLowerCase();
+          contactRules.push(or(eq(contacts.email, email), eq(contacts.secondaryEmail, email))!);
+        }
+        if (contactData.telefon) {
+          const phone = contactData.telefon.trim();
+          contactRules.push(or(eq(contacts.phone, phone), eq(contacts.secondaryPhone, phone))!);
+        }
         const [knownContact] = contactRules.length ? await db.select().from(contacts).where(and(eq(contacts.ownerId, session.user.id), or(...contactRules))).limit(1) : [];
         if (knownContact) { contactId = knownContact.id; contactDuplicates++; }
-        else { const [name = "Kontakt", ...rest] = (contactData.jmeno || "Kontakt MPSV").trim().split(/\s+/); const [createdContact] = await db.insert(contacts).values({ firstName: name, lastName: rest.join(" ") || "MPSV", role: contactData.role || null, email: contactData.email || null, phone: contactData.telefon || null, source: "MPSV", companyId: company.id, ownerId: session.user.id }).returning(); contactId = createdContact.id; contactsCreated++; }
+        else if (contactData.hasNamedPerson) {
+          const [name = "Kontakt", ...rest] = contactData.jmeno.trim().split(/\s+/);
+          const [createdContact] = await db.insert(contacts).values({ firstName: name, lastName: rest.join(" ") || "MPSV", role: contactData.role || null, email: contactData.email || null, phone: contactData.telefon || null, source: "MPSV", companyId: company.id, ownerId: session.user.id }).returning();
+          contactId = createdContact.id;
+          contactsCreated++;
+        } else {
+          genericContactSkipped++;
+        }
       } else {
         missingContact++;
       }
@@ -240,6 +255,7 @@ export async function POST() {
     warnings.push(`MPSV soubor ${latest}: celkem ${allRows.length}, IT shoda ${matchedRows.length}, zpracováno ${relevant.length}.`);
     warnings.push(`Firmy: nové ${companiesCreated}, spárované ${companiesMatched}. Kontakty: nové ${contactsCreated}, spárované ${contactDuplicates}.`);
     if (contactDuplicates) warnings.push(`${contactDuplicates} kontaktů spárováno s existující kartou.`);
+    if (genericContactSkipped) warnings.push(`${genericContactSkipped} obecných MPSV kontaktů nebylo založeno jako kontaktní karta; zůstávají jen u původního zdroje.`);
     if (missingContact) warnings.push(`${missingContact} zpracovaných MPSV položek nemělo použitelný kontakt.`);
     if (missingDetail) warnings.push(`${missingDetail} zpracovaných MPSV položek nemělo úplný text detailu.`);
     if (limitedByRun) warnings.push(`${limitedByRun} IT shod nebylo zpracováno kvůli limitu jednoho běhu ${MAX_ITEMS_PER_RUN}.`);
@@ -260,6 +276,7 @@ export async function POST() {
       companiesMatched,
       contactsCreated,
       contactDuplicates,
+      genericContactSkipped,
       missingContact,
       missingDetail,
     };
