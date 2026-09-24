@@ -5,6 +5,7 @@ import { FileBarChart, Plus, Search } from "lucide-react";
 import { goTo, localDateKey, downloadCsv } from "@/lib/app-helpers";
 import type { ActivityRecord, TaskRecord } from "@/lib/app-types";
 import { Title } from "@/components/dashboard-widgets";
+import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
 
 export function Pipeline({ note }: { note: (s: string) => void }) {
   const nextStepOptions = [
@@ -39,6 +40,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
       }[]
     >([]),
     [open, setOpen] = useState(false),
+    [exportOpen, setExportOpen] = useState(false),
     [selected, setSelected] = useState<any>(null),
     [dragged, setDragged] = useState<string | null>(null),
     [pipelineQuery, setPipelineQuery] = useState(""),
@@ -159,28 +161,45 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     (sum, item) => sum + Math.round(Number(item.valueCzk || 0) * (Number(item.probability || 0) / 100)),
     0,
   );
-  const exportPipeline = () => {
+  const pipelineExportFields: ExportField[] = [
+    { key: "title", label: "Případ" },
+    { key: "company", label: "Firma" },
+    { key: "stage", label: "Fáze" },
+    { key: "source", label: "Zdroj" },
+    { key: "valueCzk", label: "Hodnota Kč" },
+    { key: "probability", label: "Pravděpodobnost" },
+    { key: "weightedValue", label: "Vážená hodnota" },
+    { key: "expectedCloseDate", label: "Očekávané uzavření" },
+    { key: "nextStep", label: "Další krok" },
+  ];
+  const pipelineFieldValue = (item: (typeof filteredRows)[number], key: string): string => {
+    switch (key) {
+      case "title": return item.title;
+      case "company": return item.company || "";
+      case "stage": return stageLabel(item.stage);
+      case "source": return item.source || "";
+      case "valueCzk": return String(item.valueCzk || "");
+      case "probability": return `${item.probability || 0}%`;
+      case "weightedValue": return String(Math.round(Number(item.valueCzk || 0) * (Number(item.probability || 0) / 100)));
+      case "expectedCloseDate": return item.expectedCloseDate ? new Date(item.expectedCloseDate).toLocaleDateString("cs-CZ") : "";
+      case "nextStep": return item.nextStep || "";
+      default: return "";
+    }
+  };
+  const exportPipeline = (fieldKeys: string[]) => {
+    const activeFields = pipelineExportFields.filter((f) => fieldKeys.includes(f.key));
     const rowsForExport = [
-      "Případ;Firma;Fáze;Zdroj;Hodnota Kč;Pravděpodobnost;Vážená hodnota;Očekávané uzavření;Další krok",
+      activeFields.map((f) => f.label).join(";"),
       ...filteredRows.map((item) =>
-        [
-          item.title,
-          item.company || "",
-          stageLabel(item.stage),
-          item.source || "",
-          String(item.valueCzk || ""),
-          `${item.probability || 0}%`,
-          String(Math.round(Number(item.valueCzk || 0) * (Number(item.probability || 0) / 100))),
-          item.expectedCloseDate ? new Date(item.expectedCloseDate).toLocaleDateString("cs-CZ") : "",
-          item.nextStep || "",
-        ]
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        activeFields
+          .map((f) => `"${pipelineFieldValue(item, f.key).replace(/"/g, '""')}"`)
           .join(";"),
       ),
     ];
     downloadCsv(rowsForExport, "neovia-pipeline.csv");
     note(`Exportováno ${filteredRows.length} obchodních případů.`);
   };
+
   const save = async () => {
     const r = await fetch("/api/opportunities", {
       method: "POST",
@@ -377,7 +396,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
           <option value="lost">Archiv LOST</option>
           <option value="vše">Aktivní i LOST</option>
         </select>
-        <button onClick={exportPipeline}>
+        <button onClick={() => setExportOpen(true)}>
           <FileBarChart size={16} />
           Export
         </button>
@@ -785,6 +804,19 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
             </footer>
           </form>
         </div>
+      )}
+      {exportOpen && (
+        <ExportFieldPicker
+          title="Export Pipeline"
+          fields={pipelineExportFields}
+          storageKey="neovia-export-fields-pipeline"
+          count={filteredRows.length}
+          onClose={() => setExportOpen(false)}
+          onExport={(fieldKeys) => {
+            exportPipeline(fieldKeys);
+            setExportOpen(false);
+          }}
+        />
       )}
     </>
   );

@@ -37,6 +37,7 @@ import { Pipeline } from "@/components/Pipeline";
 import { Tasks } from "@/components/Tasks";
 import { CalendarView } from "@/components/CalendarView";
 import { useStalledOpportunities } from "@/lib/use-stalled-opportunities";
+import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
 import packageInfo from "../../package.json";
 
 const APP_VERSION = packageInfo.version;
@@ -2071,6 +2072,7 @@ function Demands({
 }) {
   const [rows, setRows] = useState<ImportedDemand[]>([]),
     [loading, setLoading] = useState(true),
+    [exportTarget, setExportTarget] = useState<{ items: ImportedDemand[]; filename: string } | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
     [sourceFilters, setSourceFilters] = useState<string[]>([]),
     [contactFilters, setContactFilters] = useState<string[]>([]),
@@ -2290,33 +2292,51 @@ function Demands({
     note("Poptávka byla přesunuta do koše a nebude se znovu importovat.");
   };
   const exportDisplayedDemands = () => {
-    exportDemands(displayed, "neovia-poptavky.csv");
-    note(`Exportováno ${displayed.length} vyfiltrovaných poptávek.`);
+    setExportTarget({ items: displayed, filename: "neovia-poptavky.csv" });
   };
   const exportSelectedDemands = () => {
-    exportDemands(selectedDemands, "neovia-poptavky-vybrane.csv");
-    note(`Exportováno ${selectedDemands.length} označených poptávek.`);
+    setExportTarget({ items: selectedDemands, filename: "neovia-poptavky-vybrane.csv" });
   };
-  const exportDemands = (items: ImportedDemand[], filename: string) => {
+  const demandExportFields: ExportField[] = [
+    { key: "role", label: "Poptávka" },
+    { key: "company", label: "Firma" },
+    { key: "contact", label: "Kontakt" },
+    { key: "source", label: "Zdroj" },
+    { key: "relevance", label: "Importní relevance" },
+    { key: "score", label: "Obchodní skóre" },
+    { key: "reasons", label: "Důvod relevance" },
+    { key: "nextStep", label: "Doporučený další krok" },
+    { key: "qualification", label: "Kvalifikace" },
+    { key: "location", label: "Lokalita" },
+    { key: "importedAt", label: "Import" },
+    { key: "url", label: "URL" },
+    { key: "keywords", label: "Klíčová slova" },
+  ];
+  const demandFieldValue = (d: ImportedDemand, key: string): string => {
+    switch (key) {
+      case "role": return d.role || d.title;
+      case "company": return d.company || "";
+      case "contact": return contactName(d);
+      case "source": return d.source;
+      case "relevance": return `${d.relevanceScore || 0}%`;
+      case "score": return `${demandIntelligence(d).score}%`;
+      case "reasons": return demandIntelligence(d).reasons.join(", ");
+      case "nextStep": return recommendedNextStep(d);
+      case "qualification": return qualificationItems(d).map((item) => `${item.done ? "OK" : "CHYBÍ"} ${item.label}`).join(" | ");
+      case "location": return d.location || "";
+      case "importedAt": return new Date(d.importedAt).toLocaleString("cs-CZ");
+      case "url": return d.sourceUrl || "";
+      case "keywords": return keywordPool(d).join(", ");
+      default: return "";
+    }
+  };
+  const exportDemands = (items: ImportedDemand[], filename: string, fieldKeys: string[]) => {
+    const activeFields = demandExportFields.filter((f) => fieldKeys.includes(f.key));
     const rowsForExport = [
-      "Poptávka;Firma;Kontakt;Zdroj;Importní relevance;Obchodní skóre;Důvod relevance;Doporučený další krok;Kvalifikace;Lokalita;Import;URL;Klíčová slova",
+      activeFields.map((f) => f.label).join(";"),
       ...items.map((d) =>
-        [
-          d.role || d.title,
-          d.company || "",
-          contactName(d),
-          d.source,
-          `${d.relevanceScore || 0}%`,
-          `${demandIntelligence(d).score}%`,
-          demandIntelligence(d).reasons.join(", "),
-          recommendedNextStep(d),
-          qualificationItems(d).map((item) => `${item.done ? "OK" : "CHYBÍ"} ${item.label}`).join(" | "),
-          d.location || "",
-          new Date(d.importedAt).toLocaleString("cs-CZ"),
-          d.sourceUrl || "",
-          keywordPool(d).join(", "),
-        ]
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        activeFields
+          .map((f) => `"${demandFieldValue(d, f.key).replace(/"/g, '""')}"`)
           .join(";"),
       ),
     ];
@@ -2935,6 +2955,20 @@ function Demands({
           </section>
         </div>
       )}
+      {exportTarget && (
+        <ExportFieldPicker
+          title="Export poptávek"
+          fields={demandExportFields}
+          storageKey="neovia-export-fields-demands"
+          count={exportTarget.items.length}
+          onClose={() => setExportTarget(null)}
+          onExport={(fieldKeys) => {
+            exportDemands(exportTarget.items, exportTarget.filename, fieldKeys);
+            note(`Exportováno ${exportTarget.items.length} poptávek.`);
+            setExportTarget(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -2976,10 +3010,13 @@ function Contacts({
     [activities, setActivities] = useState<ActivityRecord[]>([]),
     [form, setForm] = useState(emptyForm);
   const [mergeGroup, setMergeGroup] = useState<{ type: "contact" | "company"; items: Array<Contact | CompanyRecord> } | null>(null);
+  const [contactExportOpen, setContactExportOpen] = useState(false);
+  const [companyExportOpen, setCompanyExportOpen] = useState(false);
   const [mergeMasterId, setMergeMasterId] = useState("");
   const [merging, setMerging] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [deletingContact, setDeletingContact] = useState(false);
+  const [enrichingCompanies, setEnrichingCompanies] = useState(false);
   const emptyCompanyForm = {
     id: "",
     name: "",
@@ -3238,29 +3275,47 @@ function Contacts({
       note(form.id ? "Kontaktní karta byla upravena." : "Kontaktní karta byla uložena do společné databáze.");
     }
   };
-  const exportContacts = () => {
+  const contactExportFields: ExportField[] = [
+    { key: "name", label: "Jméno" },
+    { key: "company", label: "Firma" },
+    { key: "role", label: "Role" },
+    { key: "email", label: "E-mail" },
+    { key: "secondaryEmail", label: "2. e-mail" },
+    { key: "phone", label: "Telefon" },
+    { key: "secondaryPhone", label: "2. telefon" },
+    { key: "source", label: "Zdroj" },
+    { key: "state", label: "Stav" },
+    { key: "demandsCount", label: "Navázané poptávky" },
+  ];
+  const contactFieldValue = (c: Contact, key: string): string => {
+    switch (key) {
+      case "name": return c.name;
+      case "company": return c.company;
+      case "role": return c.role;
+      case "email": return c.email;
+      case "secondaryEmail": return c.secondaryEmail || "";
+      case "phone": return c.phone;
+      case "secondaryPhone": return c.secondaryPhone || "";
+      case "source": return c.source;
+      case "state": return c.state;
+      case "demandsCount": return String(contactDemands(c).length);
+      default: return "";
+    }
+  };
+  const exportContacts = (fieldKeys: string[]) => {
+    const activeFields = contactExportFields.filter((f) => fieldKeys.includes(f.key));
     const rows = [
-      "Jméno;Firma;Role;E-mail;2. e-mail;Telefon;2. telefon;Zdroj;Stav;Navázané poptávky",
+      activeFields.map((f) => f.label).join(";"),
       ...displayedContacts.map((c) =>
-        [
-          c.name,
-          c.company,
-          c.role,
-          c.email,
-          c.secondaryEmail || "",
-          c.phone,
-          c.secondaryPhone || "",
-          c.source,
-          c.state,
-          String(contactDemands(c).length),
-        ]
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        activeFields
+          .map((f) => `"${contactFieldValue(c, f.key).replace(/"/g, '""')}"`)
           .join(";"),
       ),
     ];
     downloadCsv(rows, "neovia-kontakty.csv");
-    note("Export kontaktů byl připraven.");
+    note(`Exportováno ${displayedContacts.length} kontaktů.`);
   };
+
   const openDemand = (demand: ImportedDemand) => {
     window.localStorage.setItem("neovia-open-demand", demand.id);
     goTo("Poptávky");
@@ -3538,6 +3593,51 @@ function Contacts({
           : "Firemní karta byla založena.",
     );
   };
+  const enrichCompanies = async (company?: CompanyRecord) => {
+    setEnrichingCompanies(true);
+    const response = await fetch("/api/companies/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(company ? { id: company.id } : {}),
+    });
+    setEnrichingCompanies(false);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      note(data.error || "Dohledání firemních údajů se nepodařilo.");
+      return;
+    }
+    await load();
+    if (company) {
+      const refreshed = await fetch("/api/companies").then((r) => (r.ok ? r.json() : []));
+      const updated = refreshed.find((item: CompanyRecord) => item.id === company.id);
+      if (updated) {
+        setCompanyDetail(updated);
+        setCompanyForm({
+          id: updated.id,
+          name: updated.name,
+          ico: updated.ico || "",
+          website: updated.website || "",
+          sector: updated.sector || "",
+          source: updated.source || "Ručně",
+          priority: updated.priority || "",
+          size: updated.size || "",
+          relationshipStatus: updated.relationshipStatus || "",
+          ownerName: updated.ownerName || "",
+          decisionMaker: updated.decisionMaker || "",
+          nextStep: updated.nextStep || "",
+          nextStepDueAt: updated.nextStepDueAt ? updated.nextStepDueAt.slice(0, 16) : "",
+          note: updated.note || "",
+          doNotContact: Boolean(updated.doNotContact),
+        });
+      }
+    }
+    const suffix = data.limited ? " Kliknutím lze pokračovat další dávkou." : "";
+    note(
+      data.enriched
+        ? `Doplněno ${data.enriched} firem: IČO ${data.icoAdded || 0}, web ${data.websiteAdded || 0}.${suffix}`
+        : `Nenašel jsem nové chybějící údaje.${suffix}`,
+    );
+  };
   const saveActivity = async () => {
     if (!activityForm.subject.trim()) {
       note("Doplňte předmět aktivity.");
@@ -3558,35 +3658,59 @@ function Contacts({
     load();
     note(activityForm.nextStep && activityForm.nextStepDueAt ? "Aktivita byla uložena a další krok je v úkolech." : "Aktivita byla uložena.");
   };
-  const exportCompanies = () => {
+  const companyExportFields: ExportField[] = [
+    { key: "name", label: "Firma" },
+    { key: "ico", label: "IČO" },
+    { key: "website", label: "Web" },
+    { key: "sector", label: "Sektor" },
+    { key: "source", label: "Zdroj" },
+    { key: "priority", label: "Priorita" },
+    { key: "size", label: "Velikost" },
+    { key: "relationshipStatus", label: "Stav vztahu" },
+    { key: "ownerName", label: "Vlastník" },
+    { key: "decisionMaker", label: "Decision maker" },
+    { key: "nextStep", label: "Další krok" },
+    { key: "nextStepDueAt", label: "Termín" },
+    { key: "doNotContact", label: "Neoslovovat" },
+    { key: "contactsCount", label: "Kontakty" },
+    { key: "demandsCount", label: "Poptávky" },
+    { key: "opportunitiesCount", label: "Příležitosti" },
+  ];
+  const companyFieldValue = (company: CompanyRecord, key: string): string => {
+    switch (key) {
+      case "name": return company.name;
+      case "ico": return company.ico || "";
+      case "website": return company.website || "";
+      case "sector": return company.sector || "";
+      case "source": return company.source || "";
+      case "priority": return company.priority || "";
+      case "size": return company.size || "";
+      case "relationshipStatus": return company.relationshipStatus || "";
+      case "ownerName": return company.ownerName || "";
+      case "decisionMaker": return company.decisionMaker || "";
+      case "nextStep": return company.nextStep || "";
+      case "nextStepDueAt": return company.nextStepDueAt || "";
+      case "doNotContact": return company.doNotContact ? "ano" : "ne";
+      case "contactsCount": return String(company.contactsCount || companyContacts(company).length);
+      case "demandsCount": return String(company.demandsCount || companyDemands(company).length);
+      case "opportunitiesCount": return String(company.opportunitiesCount || companyOpportunities(company).length);
+      default: return "";
+    }
+  };
+  const exportCompanies = (fieldKeys: string[]) => {
+    const activeFields = companyExportFields.filter((f) => fieldKeys.includes(f.key));
     const rows = [
-      "Firma;IČO;Web;Sektor;Zdroj;Priorita;Velikost;Stav vztahu;Vlastník;Decision maker;Další krok;Termín;Neoslovovat;Kontakty;Poptávky;Příležitosti",
+      activeFields.map((f) => f.label).join(";"),
       ...displayedCompanies.map((company) =>
-        [
-          company.name,
-          company.ico || "",
-          company.website || "",
-          company.sector || "",
-          company.source || "",
-          company.priority || "",
-          company.size || "",
-          company.relationshipStatus || "",
-          company.ownerName || "",
-          company.decisionMaker || "",
-          company.nextStep || "",
-          company.nextStepDueAt || "",
-          company.doNotContact ? "ano" : "ne",
-          String(company.contactsCount || companyContacts(company).length),
-          String(company.demandsCount || companyDemands(company).length),
-          String(company.opportunitiesCount || companyOpportunities(company).length),
-        ]
-          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        activeFields
+          .map((f) => `"${companyFieldValue(company, f.key).replace(/"/g, '""')}"`)
           .join(";"),
       ),
     ];
     downloadCsv(rows, "neovia-firmy.csv");
-    note("Export firem byl připraven.");
+    note(`Exportováno ${displayedCompanies.length} firem.`);
   };
+
   const activeDetail = detail;
   return (
     <>
@@ -3601,7 +3725,7 @@ function Contacts({
         <div className="title-actions">
           {crmTab === "contacts" ? (
             <>
-              <button className="secondary" onClick={exportContacts}>
+              <button className="secondary" onClick={() => setContactExportOpen(true)}>
                 Export kontaktů
               </button>
               <button className="primary" onClick={openCreate}>
@@ -3611,7 +3735,10 @@ function Contacts({
             </>
           ) : (
             <>
-              <button className="secondary" onClick={exportCompanies}>
+              <button className="secondary" disabled={enrichingCompanies} onClick={() => enrichCompanies()}>
+                {enrichingCompanies ? "Dohledávám…" : "Doplnit IČO a web"}
+              </button>
+              <button className="secondary" onClick={() => setCompanyExportOpen(true)}>
                 Export firem
               </button>
               <button className="primary" onClick={openCompanyCreate}>
@@ -3993,8 +4120,20 @@ function Contacts({
                   </span>
                   <div>
                     <b>{company.name}</b>
-                    <small>{company.sector || "Sektor neuveden"} · IČO {company.ico || "neuvedeno"}</small>
-                    {company.website && <span className="source-tag">{company.website}</span>}
+                    <small>{company.sector || "Sektor neuveden"}</small>
+                    <div className="company-card-meta">
+                      <span>IČO {company.ico || "neuvedeno"}</span>
+                      {company.website && (
+                        <a
+                          href={company.website.startsWith("http") ? company.website : `https://${company.website}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {companyDomainKey(company.website) || company.website}
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </button>
                 <div className="contact-data">
@@ -4255,6 +4394,14 @@ function Contacts({
             )}
             {companyDetail && (
               <div className="quick-contact-actions">
+                <button
+                  type="button"
+                  className="entity-link"
+                  disabled={enrichingCompanies}
+                  onClick={() => enrichCompanies(companyDetail)}
+                >
+                  {enrichingCompanies ? "Dohledávám…" : "Dohledat IČO a web"}
+                </button>
                 <WebsiteLink value={companyDetail.website} />
                 <button type="button" className="entity-link" onClick={() => openCompanyDemands(companyDetail.name)}>
                   Otevřít poptávky firmy
@@ -4608,6 +4755,32 @@ function Contacts({
             </footer>
           </div>
         </div>
+      )}
+      {contactExportOpen && (
+        <ExportFieldPicker
+          title="Export kontaktů"
+          fields={contactExportFields}
+          storageKey="neovia-export-fields-contacts"
+          count={displayedContacts.length}
+          onClose={() => setContactExportOpen(false)}
+          onExport={(fieldKeys) => {
+            exportContacts(fieldKeys);
+            setContactExportOpen(false);
+          }}
+        />
+      )}
+      {companyExportOpen && (
+        <ExportFieldPicker
+          title="Export firem"
+          fields={companyExportFields}
+          storageKey="neovia-export-fields-companies"
+          count={displayedCompanies.length}
+          onClose={() => setCompanyExportOpen(false)}
+          onExport={(fieldKeys) => {
+            exportCompanies(fieldKeys);
+            setCompanyExportOpen(false);
+          }}
+        />
       )}
     </>
   );

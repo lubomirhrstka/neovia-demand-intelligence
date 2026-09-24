@@ -3175,6 +3175,39 @@ button.metric:hover {
   color: #536f70;
   line-height: 1.5;
 }
+.export-field-actions {
+  display: flex;
+  gap: 14px;
+  margin: 0 24px 10px;
+}
+.export-field-actions .link-action {
+  background: none;
+  border: 0;
+  color: #0c8175;
+  font: 700 11px Manrope;
+  cursor: pointer;
+  padding: 0;
+}
+.export-field-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  margin: 0 24px 20px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.export-field-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: #22383a;
+  padding: 6px 4px;
+  border-radius: 6px;
+}
+.export-field-item:hover {
+  background: #f2f8f7;
+}
 .merge-options {
   display: grid;
   gap: 10px;
