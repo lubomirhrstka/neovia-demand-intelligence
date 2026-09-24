@@ -37,348 +37,33 @@ import packageInfo from "../../package.json";
 const APP_VERSION = packageInfo.version;
 const APP_RELEASE_DATE = process.env.NEXT_PUBLIC_APP_RELEASE_DATE || "2026-09-21";
 
-type View =
-  | "Přehled"
-  | "E-mail"
-  | "Kalendář"
-  | "Poptávky"
-  | "Kontakty"
-  | "Pool kapacit"
-  | "Pipeline"
-  | "Úkoly"
-  | "Zdroje"
-  | "Analýzy"
-  | "Nastavení";
-const views: View[] = [
-  "Přehled",
-  "E-mail",
-  "Kalendář",
-  "Poptávky",
-  "Kontakty",
-  "Pool kapacit",
-  "Pipeline",
-  "Úkoly",
-  "Zdroje",
-  "Analýzy",
-  "Nastavení",
-];
-function goTo(view: View) {
-  window.location.hash = encodeURIComponent(view);
-}
-function escapeIcs(value: string) {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\n/g, "\\n")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
-}
-function formatIcsDate(value: Date) {
-  return value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-function localDateKey(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-function toDatetimeLocal(value: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
-}
-function repairCzechMojibake(value: string) {
-  const replacements: Record<string, string> = {
-    "√°": "á",
-    "√Å": "Á",
-    "ƒç": "č",
-    "ƒå": "Č",
-    "ƒè": "ď",
-    "ƒé": "Ď",
-    "√©": "é",
-    "√â": "É",
-    "ƒõ": "ě",
-    "ƒö": "Ě",
-    "√≠": "í",
-    "√ç": "Í",
-    "≈à": "ň",
-    "≈á": "Ň",
-    "√≥": "ó",
-    "√ì": "Ó",
-    "≈ô": "ř",
-    "≈ò": "Ř",
-    "≈°": "š",
-    "≈†": "Š",
-    "≈•": "ť",
-    "≈§": "Ť",
-    "√∫": "ú",
-    "√ö": "Ú",
-    "≈Ø": "ů",
-    "≈Æ": "Ů",
-    "√Ω": "ý",
-    "√ù": "Ý",
-    "≈æ": "ž",
-    "≈Ω": "Ž",
-  };
-  return Object.entries(replacements).reduce(
-    (text, [broken, fixed]) => text.replaceAll(broken, fixed),
-    value,
-  );
-}
-function parseCsvRow(row: string) {
-  const cells: string[] = [];
-  let current = "";
-  let quoted = false;
-  for (let index = 0; index < row.length; index += 1) {
-    const char = row[index];
-    const next = row[index + 1];
-    if (char === '"' && quoted && next === '"') {
-      current += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === ";" && !quoted) {
-      cells.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  cells.push(current);
-  return cells;
-}
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-function utf16LeBlob(content: string, type: string) {
-  const bytes = new Uint8Array(content.length * 2 + 2);
-  bytes[0] = 0xff;
-  bytes[1] = 0xfe;
-  for (let index = 0; index < content.length; index += 1) {
-    const code = content.charCodeAt(index);
-    bytes[index * 2 + 2] = code & 0xff;
-    bytes[index * 2 + 3] = code >> 8;
-  }
-  return new Blob([bytes], { type });
-}
-function downloadCsv(rows: string[], filename: string) {
-  const parsedRows = rows.map((row) =>
-    parseCsvRow(row).map((cell) => repairCzechMojibake(cell)),
-  );
-  const columnCount = Math.max(1, ...parsedRows.map((row) => row.length));
-  const dataRowCount = Math.max(1, parsedRows.length);
-  const filterRange = `R3C1:R${dataRowCount + 2}C${columnCount}`;
-  const generatedAt = new Date().toLocaleString("cs-CZ");
-  const tableRows = [
-    `<tr class="export-title"><td colspan="${columnCount}">NEOVIA export, ${escapeHtml(generatedAt)}</td></tr>`,
-    `<tr class="export-filter"><td colspan="${columnCount}">Filtr a hledání: v Excelu použij šipky v hlavičce tabulky nebo zkratku Ctrl+F. AutoFilter je připravený pro celý rozsah dat.</td></tr>`,
-    ...parsedRows.map((row, rowIndex) => {
-      const tag = rowIndex === 0 ? "th" : "td";
-      return `<tr>${Array.from({ length: columnCount }, (_, cellIndex) => {
-        const cell = row[cellIndex] || "";
-        return `<${tag}>${escapeHtml(cell)}</${tag}>`;
-      }).join("")}</tr>`;
-    }),
-  ].join("");
-  const workbook = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-16" />
-<!--[if gte mso 9]><xml>
-<x:ExcelWorkbook>
-<x:ExcelWorksheets>
-<x:ExcelWorksheet>
-<x:Name>Export</x:Name>
-<x:WorksheetOptions>
-<x:Selected/>
-<x:FreezePanes/>
-<x:FrozenNoSplit/>
-<x:SplitHorizontal>3</x:SplitHorizontal>
-<x:TopRowBottomPane>3</x:TopRowBottomPane>
-<x:ActivePane>2</x:ActivePane>
-<x:AutoFilter x:Range="${filterRange}"/>
-</x:WorksheetOptions>
-</x:ExcelWorksheet>
-</x:ExcelWorksheets>
-</x:ExcelWorkbook>
-</xml><![endif]-->
-<style>
-body { font-family: Arial, sans-serif; }
-table { border-collapse: collapse; }
-th, td {
-  border: 1px solid #9fb8b7;
-  padding: 6px 8px;
-  vertical-align: top;
-  white-space: nowrap;
-  mso-number-format: "\\@";
-}
-th {
-  background: #0b7d70;
-  color: #ffffff;
-  font-weight: 700;
-}
-.export-title td {
-  background: #e6f4f1;
-  color: #173739;
-  font-weight: 700;
-  font-size: 13px;
-}
-.export-filter td {
-  background: #fff6df;
-  color: #6a5114;
-  font-weight: 700;
-}
-</style>
-</head>
-<body><table>${tableRows}</table></body></html>`;
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(
-    utf16LeBlob(workbook, "application/vnd.ms-excel;charset=utf-16le"),
-  );
-  link.download = filename.replace(/\.csv$/i, ".xls");
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(link.href);
-}
-type Demand = {
-  id: string;
-  company: string;
-  role: string;
-  place: string;
-  source: string;
-  score: number;
-  status: string;
-  contact: string;
-  age: string;
-  tags: string[];
-};
+import { type View, views } from "@/lib/app-types";
+import {
+  goTo,
+  escapeIcs,
+  formatIcsDate,
+  localDateKey,
+  toDatetimeLocal,
+  repairCzechMojibake,
+  parseCsvRow,
+  escapeHtml,
+  utf16LeBlob,
+  downloadCsv,
+} from "@/lib/app-helpers";
+import type {
+  Demand,
+  Contact,
+  CompanyRecord,
+  ActivityRecord,
+  TaskRecord,
+  CalendarStatus,
+  CalendarEventRecord,
+  DashboardOpportunity,
+  ContactRecord,
+  ImportRunRecord,
+} from "@/lib/app-types";
 const demands: Demand[] = [];
-type Contact = {
-  id: string;
-  companyId: string | null;
-  name: string;
-  company: string;
-  role: string;
-  email: string;
-  secondaryEmail?: string;
-  phone: string;
-  secondaryPhone?: string;
-  source: string;
-  state: string;
-  duplicates: number;
-  last: string;
-  verified: boolean;
-};
-type CompanyRecord = {
-  id: string;
-  name: string;
-  ico: string | null;
-  website: string | null;
-  sector: string | null;
-  source: string | null;
-  priority: string | null;
-  size: string | null;
-  relationshipStatus: string | null;
-  ownerName: string | null;
-  decisionMaker: string | null;
-  nextStep: string | null;
-  nextStepDueAt: string | null;
-  note: string | null;
-  doNotContact: boolean;
-  updatedAt: string;
-  contactsCount: number;
-  demandsCount: number;
-  opportunitiesCount: number;
-};
-type ActivityRecord = {
-  id: string;
-  type: string;
-  subject: string;
-  note: string | null;
-  occurredAt: string;
-  companyId: string | null;
-  company: string | null;
-  contactId: string | null;
-  contactFirstName: string | null;
-  contactLastName: string | null;
-  opportunityId: string | null;
-  opportunityTitle: string | null;
-};
 const initialContacts: Contact[] = [];
-type TaskRecord = {
-  id: string;
-  title: string;
-  kind?: string | null;
-  priority: number;
-  tag?: string | null;
-  dueAt: string | null;
-  status: string;
-  externalProvider?: string | null;
-  externalId?: string | null;
-  syncedAt?: string | null;
-  contactId?: string | null;
-  contactName?: string | null;
-  companyId?: string | null;
-  opportunityId?: string | null;
-  opportunityTitle?: string | null;
-  company?: string | null;
-};
-type CalendarStatus = {
-  configured: boolean;
-  connected: boolean;
-  account: string;
-  oauthUrl: string | null;
-  redirectUri: string;
-  missing: string[];
-  mode: string;
-  lastSyncAt: string | null;
-};
-type CalendarEventRecord = {
-  id: string;
-  title: string;
-  start: string | null;
-  end: string | null;
-  link: string;
-};
-type DashboardOpportunity = {
-  id: string;
-  title: string;
-  companyId?: string | null;
-  company: string | null;
-  stage: string;
-  valueCzk: number | null;
-  probability: number;
-  expectedCloseDate: string | null;
-  source?: string | null;
-};
-type ContactRecord = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  role: string | null;
-  email: string | null;
-  secondaryEmail?: string | null;
-  phone: string | null;
-  secondaryPhone?: string | null;
-  verified: boolean;
-  companyId?: string | null;
-  company: string | null;
-};
-type ImportRunRecord = {
-  id: string;
-  sourceName: string | null;
-  sourceKey: string | null;
-  status: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  receivedCount: number;
-  createdCount: number;
-  updatedCount: number;
-  skippedCount: number;
-  errorSummary: string | null;
-};
 const nav: { label: View; icon: typeof LayoutDashboard }[] = [
   { label: "Přehled", icon: LayoutDashboard },
   { label: "E-mail", icon: Mail },
@@ -4965,6 +4650,7 @@ function Pool({ note }: { note: (s: string) => void }) {
     >([]),
     [open, setOpen] = useState(false),
     [editingId, setEditingId] = useState<string | null>(null),
+    [confirmingDelete, setConfirmingDelete] = useState(false),
     [form, setForm] = useState({
       name: "",
       role: "",
@@ -4991,7 +4677,6 @@ function Pool({ note }: { note: (s: string) => void }) {
     setOpen(true);
   };
   const deleteCapacity = async (id: string) => {
-    if (!window.confirm("Opravdu chcete tuto kapacitu odstranit?")) return;
     const r = await fetch("/api/capacities", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -5002,6 +4687,7 @@ function Pool({ note }: { note: (s: string) => void }) {
       return;
     }
     setOpen(false);
+    setConfirmingDelete(false);
     load();
     note("Kapacita byla odstraněna.");
   };
@@ -5117,13 +4803,35 @@ function Pool({ note }: { note: (s: string) => void }) {
                 Zrušit
               </button>
               {editingId && (
-                <button type="button" className="danger" onClick={() => deleteCapacity(editingId)}>
+                <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
                   Odstranit
                 </button>
               )}
               <button className="primary">{editingId ? "Uložit změny" : "Uložit kapacitu"}</button>
             </footer>
           </form>
+        </div>
+      )}
+      {confirmingDelete && editingId && (
+        <div className="modal-backdrop">
+          <div className="modal delete-choice">
+            <header>
+              <div>
+                <p>POOL KAPACIT</p>
+                <h2>Odstranit „{form.name}"</h2>
+              </div>
+              <button type="button" onClick={() => setConfirmingDelete(false)}>×</button>
+            </header>
+            <p className="merge-hint">
+              <b>Tuto akci nelze vrátit zpět.</b> Kapacita bude trvale odstraněna.
+            </p>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setConfirmingDelete(false)}>Zrušit</button>
+              <button type="button" className="danger" onClick={() => deleteCapacity(editingId)}>
+                Ano, odstranit
+              </button>
+            </footer>
+          </div>
         </div>
       )}
     </>
