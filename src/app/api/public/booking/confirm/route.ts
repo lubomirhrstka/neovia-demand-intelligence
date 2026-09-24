@@ -1,4 +1,4 @@
-import { getBookingCalendarAccount } from "@/lib/booking";
+import { getBookingConfig, getBookingCalendarAccount } from "@/lib/booking";
 import { getDb } from "@/lib/db";
 import { calendarPost } from "@/lib/google-calendar";
 import { bookings } from "@/lib/schema";
@@ -18,10 +18,14 @@ export async function POST(request: Request) {
   if (Number.isNaN(startDate.getTime()) || startDate.getTime() < Date.now() - 60_000) {
     return NextResponse.json({ error: "Vybraný termín už není platný, vyberte prosím jiný." }, { status: 400 });
   }
-  const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
 
   const account = await getBookingCalendarAccount();
-  if (!account?.accessToken || !account.ownerId) return NextResponse.json({ error: "Kalendář zatím není nastavený." }, { status: 503 });
+  if (!account?.accessToken || !account.ownerId) {
+    return NextResponse.json({ error: "Kalendář zatím není nastavený." }, { status: 503 });
+  }
+
+  const config = await getBookingConfig(account.ownerId);
+  const endDate = new Date(startDate.getTime() + config.slotMinutes * 60 * 1000);
 
   try {
     const payload = {
@@ -29,8 +33,11 @@ export async function POST(request: Request) {
       description: [
         "Rezervace přes veřejný booking odkaz NEOVIA Demand Intelligence.",
         `Host: ${guestName.trim()} (${guestEmail.trim()})`,
+        `Délka: ${config.slotMinutes} min`,
         note?.trim() ? `Poznámka: ${note.trim()}` : "",
-      ].filter(Boolean).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       start: { dateTime: startDate.toISOString() },
       end: { dateTime: endDate.toISOString() },
       attendees: [{ email: guestEmail.trim(), displayName: guestName.trim() }],
@@ -49,7 +56,7 @@ export async function POST(request: Request) {
       endsAt: endDate,
       externalEventId: event.id,
     });
-    return NextResponse.json({ ok: true, htmlLink: event.htmlLink });
+    return NextResponse.json({ ok: true, htmlLink: event.htmlLink, slotMinutes: config.slotMinutes });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Rezervaci se nepodařilo vytvořit.";
     return NextResponse.json({ error: message }, { status: 502 });
