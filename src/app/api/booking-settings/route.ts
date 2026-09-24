@@ -14,24 +14,33 @@ export async function GET() {
   const user = await actor();
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
 
-  const [row] = await getDb()
-    .select()
-    .from(bookingSettings)
-    .where(eq(bookingSettings.ownerId, user.id))
-    .limit(1);
+  try {
+    const [row] = await getDb()
+      .select()
+      .from(bookingSettings)
+      .where(eq(bookingSettings.ownerId, user.id))
+      .limit(1);
 
-  if (!row) {
-    return NextResponse.json({ ...DEFAULT_BOOKING_CONFIG, id: null });
+    if (!row) {
+      return NextResponse.json({ ...DEFAULT_BOOKING_CONFIG, id: null });
+    }
+    return NextResponse.json({
+      id: row.id,
+      slotMinutes: row.slotMinutes,
+      workdayStartHour: row.workdayStartHour,
+      workdayEndHour: row.workdayEndHour,
+      workdays: row.workdays,
+      timezone: row.timezone,
+      bufferMinutes: row.bufferMinutes,
+    });
+  } catch {
+    return NextResponse.json({
+      ...DEFAULT_BOOKING_CONFIG,
+      id: null,
+      migrationNeeded: true,
+      error: "Tabulky bookingu ještě nejsou v databázi. Spusťte migraci 0016_booking_settings.sql.",
+    });
   }
-  return NextResponse.json({
-    id: row.id,
-    slotMinutes: row.slotMinutes,
-    workdayStartHour: row.workdayStartHour,
-    workdayEndHour: row.workdayEndHour,
-    workdays: row.workdays,
-    timezone: row.timezone,
-    bufferMinutes: row.bufferMinutes,
-  });
 }
 
 export async function PUT(request: Request) {
@@ -63,13 +72,6 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Vyberte alespoň jeden pracovní den." }, { status: 400 });
   }
 
-  const db = getDb();
-  const [existing] = await db
-    .select()
-    .from(bookingSettings)
-    .where(eq(bookingSettings.ownerId, user.id))
-    .limit(1);
-
   const values = {
     slotMinutes,
     workdayStartHour,
@@ -80,18 +82,35 @@ export async function PUT(request: Request) {
     updatedAt: new Date(),
   };
 
-  if (existing) {
-    const [updated] = await db
-      .update(bookingSettings)
-      .set(values)
-      .where(eq(bookingSettings.id, existing.id))
-      .returning();
-    return NextResponse.json(updated);
-  }
+  try {
+    const db = getDb();
+    const [existing] = await db
+      .select()
+      .from(bookingSettings)
+      .where(eq(bookingSettings.ownerId, user.id))
+      .limit(1);
 
-  const [created] = await db
-    .insert(bookingSettings)
-    .values({ ownerId: user.id, ...values })
-    .returning();
-  return NextResponse.json(created);
+    if (existing) {
+      const [updated] = await db
+        .update(bookingSettings)
+        .set(values)
+        .where(eq(bookingSettings.id, existing.id))
+        .returning();
+      return NextResponse.json(updated);
+    }
+
+    const [created] = await db
+      .insert(bookingSettings)
+      .values({ ownerId: user.id, ...values })
+      .returning();
+    return NextResponse.json(created);
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          "Tabulky bookingu ještě nejsou v databázi. Spusťte migraci 0016_booking_settings.sql na produkční DB.",
+      },
+      { status: 503 },
+    );
+  }
 }
