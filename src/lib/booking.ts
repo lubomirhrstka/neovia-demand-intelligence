@@ -2,6 +2,7 @@ import { getDb } from "./db";
 import { bookingBlocks, bookingSettings, emailAccounts } from "./schema";
 import { and, eq, sql } from "drizzle-orm";
 import { refreshCalendarAccessToken } from "./google-calendar";
+import { ensureBookingTables } from "./ensure-booking-tables";
 
 export const BOOKING_TIMEZONE = "Europe/Prague";
 
@@ -49,6 +50,7 @@ export async function getBookingCalendarAccount() {
 export async function getBookingConfig(ownerId?: string | null): Promise<BookingConfig> {
   if (!ownerId) return { ...DEFAULT_BOOKING_CONFIG };
   try {
+    await ensureBookingTables();
     const db = getDb();
     const [row] = await db
       .select()
@@ -68,7 +70,6 @@ export async function getBookingConfig(ownerId?: string | null): Promise<Booking
       bufferMinutes: Math.max(0, Math.min(120, row.bufferMinutes ?? 0)),
     };
   } catch {
-    // Tables may not exist yet before migration — fall back to defaults
     return { ...DEFAULT_BOOKING_CONFIG };
   }
 }
@@ -76,6 +77,7 @@ export async function getBookingConfig(ownerId?: string | null): Promise<Booking
 /** Bloky (dovolená apod.), které překrývají daný den. */
 export async function getBookingBlocksForDay(ownerId: string, dayStart: Date, dayEnd: Date) {
   try {
+    await ensureBookingTables();
     const db = getDb();
     return await db
       .select()
