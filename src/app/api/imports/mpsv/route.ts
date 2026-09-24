@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { normalizeCompanyName, sameCompanyIdentity } from "@/lib/matching";
+import { companyDomainFrom, normalizeCompanyName, sameCompanyIdentity } from "@/lib/matching";
 import { companies, connectorSources, contacts, demands, importRuns, monitorSettings, users } from "@/lib/schema";
 import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -91,6 +91,24 @@ const TAG_KEYWORDS = [
   "Tester",
   "QA",
 ];
+const FREE_EMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "seznam.cz",
+  "email.cz",
+  "post.cz",
+  "volny.cz",
+  "centrum.cz",
+  "atlas.cz",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "yahoo.com",
+  "icloud.com",
+  "me.com",
+  "proton.me",
+  "protonmail.com",
+]);
 
 type MpsvItem = {
   portalId: number; referencniCislo?: string; datumVlozeni?: string; datumZmeny?: string; mesicniMzdaOd?: number; mesicniMzdaDo?: number;
@@ -117,6 +135,12 @@ type MpsvItem = {
 };
 
 const normalize = (value: unknown) => String(value || "").trim().replace(/\s+/g, " ");
+const normalizeEmail = (value: unknown) => normalize(value).toLowerCase();
+const emailDomain = (value: unknown) => {
+  const domain = normalizeEmail(value).match(/@([a-z0-9.-]+\.[a-z]{2,})$/)?.[1]?.replace(/^www\./, "") || "";
+  if (!domain || FREE_EMAIL_DOMAINS.has(domain)) return "";
+  return domain;
+};
 const hasStandaloneTerm = (text: string, term: string) =>
   new RegExp(`(^|[^a-zá-ž0-9])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-zá-ž0-9]|$)`, "i").test(text);
 const keywordMatches = (text: string, keyword: string) => {
@@ -143,12 +167,16 @@ function locationOf(item: MpsvItem) {
 function contactFrom(item: MpsvItem) {
   const primary = item.prvniKontaktSeZamestnavatelem?.komuSeHlasit;
   const workplace = item.mistoVykonuPrace?.pracoviste?.[0];
-  const fullName = normalize([primary?.jmeno, primary?.prijmeni].filter(Boolean).join(" "));
-  const hasNamedPerson = Boolean(normalize(primary?.jmeno) || normalize(primary?.prijmeni));
+  const firstName = normalize(primary?.jmeno);
+  const lastName = normalize(primary?.prijmeni);
+  const fullName = normalize([firstName, lastName].filter(Boolean).join(" "));
+  const hasNamedPerson = Boolean(fullName);
   return {
-    email: normalize(primary?.email || workplace?.email).toLowerCase(),
+    email: normalizeEmail(primary?.email || workplace?.email),
     telefon: normalize(primary?.telefon || workplace?.telefon),
-    jmeno: fullName || "Kontakt MPSV",
+    firstName,
+    lastName,
+    jmeno: fullName,
     role: normalize(primary?.poziceVeSpolecnosti),
     hasNamedPerson,
   };
@@ -205,38 +233,57 @@ export async function POST() {
         agencySkipped++;
         continue;
       }
-      const knownCompany = allCompanies.find((company) =>
+      const contactData = contactFrom(item);
+      const contactRules = [];
+      if (contactData.email) {
+        contactRules.push(or(eq(contacts.email, contactData.email), eq(contacts.secondaryEmail, contactData.email))!);
+      }
+      if (contactData.telefon) {
+        contactRules.push(or(eq(contacts.phone, contactData.telefon), eq(contacts.secondaryPhone, contactData.telefon))!);
+      }
+      const [knownContact] = contactRules.length
+        ? await db.select().from(contacts).where(and(eq(contacts.ownerId, session.user.id), or(...contactRules))).limit(1)
+        : [];
+      const companyByKnownContact = knownContact?.companyId
+        ? allCompanies.find((company) => company.id === knownContact.companyId)
+        : undefined;
+      const contactDomain = emailDomain(contactData.email);
+      const companyByEmailDomain = contactDomain
+        ? allCompanies.find((company) => companyDomainFrom(company.website || "") === contactDomain)
+        : undefined;
+      const knownCompany = companyByKnownContact || allCompanies.find((company) =>
         sameCompanyIdentity(company, { name: companyName, ico: item.zamestnavatel?.ico || null }).same,
-      );
-      const company = knownCompany || (await db.insert(companies).values({ name: companyName, ico: item.zamestnavatel?.ico || null, source: "MPSV", ownerId: session.user.id }).returning())[0];
+      ) || companyByEmailDomain;
+      const company = knownCompany || (await db.insert(companies).values({
+        name: companyName,
+        ico: item.zamestnavatel?.ico || null,
+        website: contactDomain ? `https://${contactDomain}` : null,
+        source: "MPSV",
+        ownerId: session.user.id,
+      }).returning())[0];
       if (knownCompany) companiesMatched++;
       else {
         companiesCreated++;
         allCompanies.push(company);
       }
       if (knownCompany && !knownCompany.source) await db.update(companies).set({ source: "MPSV", updatedAt: new Date() }).where(eq(companies.id, knownCompany.id));
+      if (knownCompany && !knownCompany.website && contactDomain) {
+        await db.update(companies).set({ website: `https://${contactDomain}`, updatedAt: new Date() }).where(eq(companies.id, knownCompany.id));
+        knownCompany.website = `https://${contactDomain}`;
+      }
       const [existing] = await db.select().from(demands).where(and(eq(demands.ownerId, session.user.id), or(eq(demands.externalId, externalId), and(eq(demands.source, "MPSV"), eq(demands.title, title), eq(demands.companyId, company.id))))).limit(1);
       if (existing?.deletedAt) {
         skipped++;
         continue;
       }
-      const contactData = contactFrom(item);
       let contactId: string | undefined;
       if (contactData?.email || contactData?.telefon) {
-        const contactRules = [];
-        if (contactData.email) {
-          const email = contactData.email.trim().toLowerCase();
-          contactRules.push(or(eq(contacts.email, email), eq(contacts.secondaryEmail, email))!);
-        }
-        if (contactData.telefon) {
-          const phone = contactData.telefon.trim();
-          contactRules.push(or(eq(contacts.phone, phone), eq(contacts.secondaryPhone, phone))!);
-        }
-        const [knownContact] = contactRules.length ? await db.select().from(contacts).where(and(eq(contacts.ownerId, session.user.id), or(...contactRules))).limit(1) : [];
         if (knownContact) { contactId = knownContact.id; contactDuplicates++; }
         else if (contactData.hasNamedPerson) {
-          const [name = "Kontakt", ...rest] = contactData.jmeno.trim().split(/\s+/);
-          const [createdContact] = await db.insert(contacts).values({ firstName: name, lastName: rest.join(" ") || "MPSV", role: contactData.role || null, email: contactData.email || null, phone: contactData.telefon || null, source: "MPSV", companyId: company.id, ownerId: session.user.id }).returning();
+          const nameParts = contactData.jmeno.trim().split(/\s+/).filter(Boolean);
+          const firstName = contactData.firstName || nameParts[0] || "Kontakt";
+          const lastName = contactData.lastName || nameParts.slice(1).join(" ") || "";
+          const [createdContact] = await db.insert(contacts).values({ firstName, lastName, role: contactData.role || null, email: contactData.email || null, phone: contactData.telefon || null, source: "MPSV", companyId: company.id, ownerId: session.user.id }).returning();
           contactId = createdContact.id;
           contactsCreated++;
         } else {
