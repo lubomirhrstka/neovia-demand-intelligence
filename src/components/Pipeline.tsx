@@ -7,6 +7,19 @@ import type { ActivityRecord, TaskRecord } from "@/lib/app-types";
 import { Title } from "@/components/dashboard-widgets";
 import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
 
+const ActivityNoteLink = ({ note }: { note?: string | null }) => {
+  if (!note) return null;
+  const url = note.match(/https?:\/\/\S+/)?.[0] || "";
+  if (url) {
+    return (
+      <a className="activity-note-link" href={url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+        Otevřít archivovaný e-mail
+      </a>
+    );
+  }
+  return <p>{note}</p>;
+};
+
 export function Pipeline({ note }: { note: (s: string) => void }) {
   const nextStepOptions = [
     "Zavolat kontaktu",
@@ -717,7 +730,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                     <small>
                       {activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}
                     </small>
-                    {activity.note && <p>{activity.note}</p>}
+                    <ActivityNoteLink note={activity.note} />
                   </div>
                 ))
               )}

@@ -1228,7 +1228,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
   const [emailDetailLoading, setEmailDetailLoading] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
-  const [composeContext, setComposeContext] = useState<Pick<LocalEmailDraft, "contactId" | "companyId" | "opportunityId" | "demandId" | "source"> | null>(null);
+  const [composeContext, setComposeContext] = useState<Pick<LocalEmailDraft, "id" | "contactId" | "companyId" | "opportunityId" | "demandId" | "source"> | null>(null);
   const [composeAttachments, setComposeAttachments] = useState<Array<{ name: string; type: string; data: string }>>([]);
   const [trackOpen, setTrackOpen] = useState(false);
   const [localDrafts, setLocalDrafts] = useState<LocalEmailDraft[]>([]);
@@ -1260,6 +1260,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
           opportunityId: draft.opportunityId || null,
           demandId: draft.demandId || null,
           source: draft.source,
+          id: draft.id,
         });
         setFolder("review");
         setComposeOpen(true);
@@ -1489,6 +1490,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       setComposeContext(null);
       setComposeAttachments([]);
       setTrackOpen(false);
+      if (composeContext?.id) {
+        const remaining = localDrafts.filter((draft) => draft.id !== composeContext.id);
+        setLocalDrafts(remaining);
+        window.localStorage.setItem("neovia-email-drafts", JSON.stringify(remaining));
+      }
       note(data.trackingId ? `E-mail byl odeslaný. Tracking ID: ${data.trackingId}` : "E-mail byl odeslaný přes připojený Gmail účet.");
       if (status?.connected && !["review", "followups"].includes(folder)) {
         fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`)
@@ -1687,6 +1693,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                       opportunityId: item.draft.opportunityId || null,
                       demandId: item.draft.demandId || null,
                       source: item.draft.source,
+                      id: item.draft.id,
                     });
                     setComposeOpen(true);
                   }}
@@ -2072,6 +2079,18 @@ const recommendedNextStep = (d: ImportedDemand) => {
   if (intelligence.score >= 80) return "Zavolat firmě";
   if (intelligence.score >= 60) return "Poslat ověřovací e-mail";
   return "Označit k ruční kvalifikaci";
+};
+const ActivityNoteLink = ({ note }: { note?: string | null }) => {
+  if (!note) return null;
+  const url = note.match(/https?:\/\/\S+/)?.[0] || "";
+  if (url) {
+    return (
+      <a className="activity-note-link" href={url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+        Otevřít archivovaný e-mail
+      </a>
+    );
+  }
+  return <small className="activity-note">{note}</small>;
 };
 const suggestedDueDate = () => {
   const value = new Date();
@@ -4473,6 +4492,7 @@ function Contacts({
                     <button type="button" key={activity.id}>
                       <b>{activity.subject}</b>
                       <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
+                      <ActivityNoteLink note={activity.note} />
                     </button>
                   ))
                 )}
@@ -4683,6 +4703,7 @@ function Contacts({
                     <button type="button" key={activity.id}>
                       <b>{activity.subject}</b>
                       <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
+                      <ActivityNoteLink note={activity.note} />
                     </button>
                   ))
                 )}
