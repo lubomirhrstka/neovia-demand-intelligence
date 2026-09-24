@@ -25,7 +25,6 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
-  Sparkles,
   Target,
   Trash2,
   Users,
@@ -3623,16 +3622,6 @@ function Contacts({
           )}
         </div>
       </div>
-      <div className="notice">
-        <Sparkles size={18} />
-        <div>
-          <b>Kontrola duplicit je aktivní</b>
-          <small>Kontakty se porovnávají podle e-mailů, telefonů i jména ve firmě. Firmy podle IČO a očištěného názvu bez právní formy.</small>
-        </div>
-        <button onClick={() => note("Duplicity se kontrolují při založení i úpravě karty a CRM radar ukazuje sloučené duplicitní skupiny.")}>
-          Jak to funguje
-        </button>
-      </div>
       <div className="toolbar crm-toolbar">
         <label>
           <Search size={17} />
@@ -4247,6 +4236,7 @@ function Contacts({
                 ×
               </button>
             </header>
+            <div className="modal-scroll company-detail-scroll">
             {companyDetail && (
               <div className="crm-summary">
                 <div>
@@ -4441,6 +4431,7 @@ function Contacts({
                 )}
               </article>
             )}
+            </div>
             <footer>
               <button
                 type="button"
