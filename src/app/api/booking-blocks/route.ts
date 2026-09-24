@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { ensureBookingTables } from "@/lib/ensure-booking-tables";
 import { bookingBlocks } from "@/lib/schema";
 import { desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -13,13 +14,18 @@ export async function GET() {
   const user = await actor();
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
 
-  const rows = await getDb()
-    .select()
-    .from(bookingBlocks)
-    .where(eq(bookingBlocks.ownerId, user.id))
-    .orderBy(desc(bookingBlocks.startsAt));
-
-  return NextResponse.json(rows);
+  try {
+    await ensureBookingTables();
+    const rows = await getDb()
+      .select()
+      .from(bookingBlocks)
+      .where(eq(bookingBlocks.ownerId, user.id))
+      .orderBy(desc(bookingBlocks.startsAt));
+    return NextResponse.json(rows);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Blokace se nepodařilo načíst.";
+    return NextResponse.json({ error: message }, { status: 503 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -33,17 +39,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Zadejte platný interval (od–do)." }, { status: 400 });
   }
 
-  const [row] = await getDb()
-    .insert(bookingBlocks)
-    .values({
-      ownerId: user.id,
-      startsAt,
-      endsAt,
-      reason: body.reason?.trim() || null,
-    })
-    .returning();
-
-  return NextResponse.json(row);
+  try {
+    await ensureBookingTables();
+    const [row] = await getDb()
+      .insert(bookingBlocks)
+      .values({
+        ownerId: user.id,
+        startsAt,
+        endsAt,
+        reason: body.reason?.trim() || null,
+      })
+      .returning();
+    return NextResponse.json(row);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Blokaci se nepodařilo přidat.";
+    return NextResponse.json({ error: message }, { status: 503 });
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -53,11 +64,17 @@ export async function DELETE(request: Request) {
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Chybí id blokace." }, { status: 400 });
 
-  const db = getDb();
-  const [row] = await db.select().from(bookingBlocks).where(eq(bookingBlocks.id, id)).limit(1);
-  if (!row || row.ownerId !== user.id) {
-    return NextResponse.json({ error: "Blokace nenalezena." }, { status: 404 });
+  try {
+    await ensureBookingTables();
+    const db = getDb();
+    const [row] = await db.select().from(bookingBlocks).where(eq(bookingBlocks.id, id)).limit(1);
+    if (!row || row.ownerId !== user.id) {
+      return NextResponse.json({ error: "Blokace nenalezena." }, { status: 404 });
+    }
+    await db.delete(bookingBlocks).where(eq(bookingBlocks.id, id));
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Blokaci se nepodařilo smazat.";
+    return NextResponse.json({ error: message }, { status: 503 });
   }
-  await db.delete(bookingBlocks).where(eq(bookingBlocks.id, id));
-  return NextResponse.json({ ok: true });
 }
