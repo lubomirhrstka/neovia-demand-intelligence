@@ -1,15 +1,33 @@
-import postgres from "postgres";
+import { sql } from "drizzle-orm";
+import { getDb } from "./db";
 
 let ensured = false;
+let ensurePromise: Promise<void> | null = null;
+
+function dbUrl() {
+  return (
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.POSTGRES_PRISMA_URL ||
+    ""
+  );
+}
 
 /** One-shot CREATE TABLE IF NOT EXISTS for booking tables (safe to call repeatedly). */
 export async function ensureBookingTables() {
   if (ensured) return;
-  const url = process.env.DATABASE_URL;
-  if (!url) return;
-  const sql = postgres(url, { prepare: false, max: 1 });
-  try {
-    await sql`
+  if (ensurePromise) return ensurePromise;
+
+  ensurePromise = (async () => {
+    const db = getDb();
+    try {
+      await db.execute(sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
+    } catch {
+      // extension may already exist or require superuser — ignore
+    }
+
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "booking_settings" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "owner_id" text NOT NULL,
@@ -22,8 +40,9 @@ export async function ensureBookingTables() {
         "created_at" timestamp DEFAULT now() NOT NULL,
         "updated_at" timestamp DEFAULT now() NOT NULL
       )
-    `;
-    await sql`
+    `);
+
+    await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "booking_blocks" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "owner_id" text NOT NULL,
@@ -32,23 +51,36 @@ export async function ensureBookingTables() {
         "reason" text,
         "created_at" timestamp DEFAULT now() NOT NULL
       )
-    `;
-    await sql.unsafe(`
-      DO $$ BEGIN
-        ALTER TABLE "booking_settings" ADD CONSTRAINT "booking_settings_owner_id_user_id_fk"
-          FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;
-      EXCEPTION WHEN duplicate_object THEN null;
-      END $$;
     `);
-    await sql.unsafe(`
-      DO $$ BEGIN
-        ALTER TABLE "booking_blocks" ADD CONSTRAINT "booking_blocks_owner_id_user_id_fk"
-          FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;
-      EXCEPTION WHEN duplicate_object THEN null;
-      END $$;
-    `);
+
+    try {
+      await db.execute(sql.raw(`
+        DO $$ BEGIN
+          ALTER TABLE "booking_settings" ADD CONSTRAINT "booking_settings_owner_id_user_id_fk"
+            FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+      `));
+      await db.execute(sql.raw(`
+        DO $$ BEGIN
+          ALTER TABLE "booking_blocks" ADD CONSTRAINT "booking_blocks_owner_id_user_id_fk"
+            FOREIGN KEY ("owner_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+      `));
+    } catch {
+      // FK is optional for functionality
+    }
+
     ensured = true;
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
+  })().finally(() => {
+    ensurePromise = null;
+  });
+
+  return ensurePromise;
+}
+
+/** Expose URL presence for diagnostics (no secrets). */
+export function hasDatabaseUrl() {
+  return Boolean(dbUrl() || process.env.DATABASE_URL);
 }
