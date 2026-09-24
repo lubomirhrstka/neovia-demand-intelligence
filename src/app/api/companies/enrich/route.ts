@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companyDomainFrom, normalizeCompanyName } from "@/lib/matching";
+import { normalizeCompanyName } from "@/lib/matching";
 import { auditLog, companies, contacts } from "@/lib/schema";
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
   const details: Array<{ id: string; name: string; ico?: string; website?: string; aresName?: string }> = [];
 
   for (const company of companyRows) {
-    const patch: Partial<typeof companies.$inferInsert> = {};
+    const patch: { ico?: string; website?: string; updatedAt?: Date } = {};
     let aresName = "";
 
     if (!company.ico) {

@@ -2317,6 +2317,37 @@ button.metric:hover {
 .crm-tabs span {
   opacity: 0.75;
 }
+.company-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+.company-card-meta span,
+.company-card-meta a {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid #d8e9e6;
+  border-radius: 999px;
+  background: #f5fbfa;
+  color: #496769;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+}
+.company-card-meta a {
+  color: #08796d;
+  background: #e7f6f2;
+}
+.company-card-meta a:hover,
+.company-card-meta a:focus-visible {
+  border-color: #08796d;
+  background: #dff3ef;
+  outline: none;
+}
 .duplicate-groups-panel {
   margin: 0 0 16px;
 }
