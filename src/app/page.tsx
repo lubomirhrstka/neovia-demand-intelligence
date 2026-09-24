@@ -108,7 +108,8 @@ export default function Home() {
   }, [contactList]);
   useEffect(() => {
     const sync = () => {
-      const candidate = decodeURIComponent(window.location.hash.slice(1));
+      const hashValue = decodeURIComponent(window.location.hash.slice(1));
+      const candidate = hashValue.split("?")[0];
       if (views.includes(candidate as View)) setView(candidate as View);
     };
     sync();
@@ -2390,6 +2391,15 @@ function Demands({
     const createdOrExisting = results.filter(
       (result) => result.status === "fulfilled" && result.value.ok,
     ).length;
+    const convertedDemandIds = selectedDemands
+      .filter((_, index) => {
+        const result = results[index];
+        return result?.status === "fulfilled" && result.value.ok;
+      })
+      .map((demand) => demand.id);
+    if (convertedDemandIds.length) {
+      setRows(rows.filter((row) => !convertedDemandIds.includes(row.id)));
+    }
     setSelectedDemandIds([]);
     note(`Do Pipeline zpracováno ${createdOrExisting} poptávek, duplicity se použily jako existující případy.`);
   };

@@ -57,6 +57,17 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   const db = getDb();
+  const archiveSourceDemand = async (demandId: string) => {
+    await db
+      .update(demands)
+      .set({
+        deletedAt: new Date(),
+        deletedById: actor.id,
+        deleteReason: "Převedeno do Pipeline",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(demands.id, demandId), eq(demands.ownerId, actor.id)));
+  };
   if (b.demandId) {
     const [existing] = await db
       .select()
@@ -68,8 +79,10 @@ export async function POST(req: Request) {
         ),
       )
       .limit(1);
-    if (existing)
+    if (existing) {
+      await archiveSourceDemand(b.demandId);
       return NextResponse.json({ ...existing, alreadyExists: true });
+    }
   }
   const existingCompanies = await db
     .select()
@@ -95,7 +108,7 @@ export async function POST(req: Request) {
   }
   const [sourceDemand] = b.demandId
     ? await db
-        .select({ source: demands.source })
+        .select({ source: demands.source, contactId: demands.contactId })
         .from(demands)
         .where(and(eq(demands.id, b.demandId), eq(demands.ownerId, actor.id)))
         .limit(1)
@@ -109,10 +122,12 @@ export async function POST(req: Request) {
       probability: Number(b.probability || 0),
       source: sourceTag || sourceDemand?.source || "Ručně",
       companyId: company.id,
+      contactId: sourceDemand?.contactId || null,
       demandId: b.demandId || null,
       ownerId: actor.id,
     })
     .returning();
+  if (b.demandId) await archiveSourceDemand(b.demandId);
   return NextResponse.json(item, { status: 201 });
 }
 export async function PATCH(req: Request) {

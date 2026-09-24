@@ -96,11 +96,16 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
         setRows(data);
         setOpportunityActivities(activityRows);
         setOpportunityTasks(taskRows);
-        const requested = window.localStorage.getItem("neovia-open-opportunity");
+        const hashQuery = window.location.hash.includes("?")
+          ? window.location.hash.slice(window.location.hash.indexOf("?") + 1)
+          : "";
+        const requestedFromUrl = new URLSearchParams(hashQuery).get("opportunity");
+        const requested = requestedFromUrl || window.localStorage.getItem("neovia-open-opportunity");
         if (requested) {
           const item = data.find((x: (typeof rows)[number]) => x.id === requested);
           if (item) {
             window.localStorage.removeItem("neovia-open-opportunity");
+            if (requestedFromUrl) window.history.replaceState(null, "", "#Pipeline");
             openDetail(item);
           }
         }
@@ -162,6 +167,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     0,
   );
   const pipelineExportFields: ExportField[] = [
+    { key: "appLink", label: "Odkaz do aplikace" },
     { key: "title", label: "Případ" },
     { key: "company", label: "Firma" },
     { key: "stage", label: "Fáze" },
@@ -174,6 +180,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
   ];
   const pipelineFieldValue = (item: (typeof filteredRows)[number], key: string): string => {
     switch (key) {
+      case "appLink": return `${window.location.origin}/#Pipeline?opportunity=${encodeURIComponent(item.id)}`;
       case "title": return item.title;
       case "company": return item.company || "";
       case "stage": return stageLabel(item.stage);
