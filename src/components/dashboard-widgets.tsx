@@ -17,7 +17,7 @@ export function Title({
   eyebrow: string;
   title: string;
   subtitle: string;
-  button: string;
+  button?: string;
   note: (s: string) => void;
   onAction?: () => void;
   tools?: ReactNode;
@@ -27,6 +27,7 @@ export function Title({
       onAction();
       return;
     }
+    if (!button) return;
     if (button === "Přidat poptávku" || button === "Importovat data") {
       goTo("Zdroje");
       return;
@@ -57,10 +58,12 @@ export function Title({
       </div>
       <div className="title-actions">
         {tools}
-        <button className="primary" onClick={action}>
-          <Plus size={17} />
-          {button}
-        </button>
+        {button ? (
+          <button className="primary" onClick={action}>
+            <Plus size={17} />
+            {button}
+          </button>
+        ) : null}
       </div>
     </div>
   );
