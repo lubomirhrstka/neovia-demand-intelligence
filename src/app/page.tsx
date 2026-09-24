@@ -1239,6 +1239,19 @@ function EmailClient({ note }: { note: (s: string) => void }) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [realFollowups, setRealFollowups] = useState<
+    { id: string; threadId: string; subject: string; to: string; sentAt: string; daysSinceSent: number }[]
+  >([]);
+  const [followupsLoading, setFollowupsLoading] = useState(false);
+  useEffect(() => {
+    if (!status?.connected) return;
+    setFollowupsLoading(true);
+    fetch("/api/email/gmail/followups")
+      .then((r) => r.json())
+      .then((data) => setRealFollowups(data.items || []))
+      .catch(() => setRealFollowups([]))
+      .finally(() => setFollowupsLoading(false));
+  }, [status?.connected]);
   useEffect(() => {
     setSelectedIds([]);
   }, [folder]);
@@ -1288,14 +1301,24 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       draft: null,
     },
   ];
-  const followupItems = [
-    {
-      subject: "Follow-up po 3 dnech",
-      contact: "Automatizace",
-      company: "Bude navázaná na úkoly a aktivity",
-      state: "Čeká na OAuth",
+  const followupItems = realFollowups.map((item) => ({
+    id: `followup-${item.id}`,
+    subject: item.subject,
+    contact: item.to,
+    company: `Bez odpovědi ${item.daysSinceSent} ${item.daysSinceSent === 1 ? "den" : item.daysSinceSent < 5 ? "dny" : "dní"}`,
+    state: "Bez odpovědi",
+    draft: {
+      id: undefined,
+      to: item.to,
+      subject: item.subject.toLowerCase().startsWith("re:") ? item.subject : `Re: ${item.subject}`,
+      body: `Dobrý den,\n\nchtěl jsem se jen ujistit, že moje předchozí zpráva dorazila v pořádku. Máte prosím čas se krátce spojit?\n\nDěkuji a přeji hezký den`,
+      contactId: null,
+      companyId: null,
+      opportunityId: null,
+      demandId: null,
+      source: `Follow-up · ${item.subject}`,
     },
-  ];
+  }));
   const folders = [
     { id: "inbox", label: "Doručené", count: countFor("INBOX") },
     { id: "sent", label: "Odeslané", count: countFor("SENT") },
@@ -1321,7 +1344,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       .finally(() => setMailLoading(false));
   }, [folder, status?.connected]);
   const selectedFolder = folders.find((item) => item.id === folder) || folders[0];
-  const sampleQueue = (folder === "followups" ? followupItems.map((item) => ({ ...item, id: undefined, draft: null })) : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
+  const sampleQueue = (folder === "followups" ? followupItems : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
   const filteredMessages = (mailData?.messages || []).filter((item) =>
     `${item.subject} ${item.from} ${item.fromEmail} ${item.snippet}`.toLowerCase().includes(search.toLowerCase()),
   );
