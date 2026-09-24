@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { DEFAULT_BOOKING_CONFIG } from "@/lib/booking";
 import { getDb } from "@/lib/db";
+import { ensureBookingTables } from "@/lib/ensure-booking-tables";
 import { bookingSettings } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -15,6 +16,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
 
   try {
+    await ensureBookingTables();
     const [row] = await getDb()
       .select()
       .from(bookingSettings)
@@ -33,13 +35,9 @@ export async function GET() {
       timezone: row.timezone,
       bufferMinutes: row.bufferMinutes,
     });
-  } catch {
-    return NextResponse.json({
-      ...DEFAULT_BOOKING_CONFIG,
-      id: null,
-      migrationNeeded: true,
-      error: "Tabulky bookingu ještě nejsou v databázi. Spusťte migraci 0016_booking_settings.sql.",
-    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Nepodařilo se načíst nastavení bookingu.";
+    return NextResponse.json({ ...DEFAULT_BOOKING_CONFIG, id: null, error: message }, { status: 200 });
   }
 }
 
@@ -83,6 +81,7 @@ export async function PUT(request: Request) {
   };
 
   try {
+    await ensureBookingTables();
     const db = getDb();
     const [existing] = await db
       .select()
@@ -104,13 +103,8 @@ export async function PUT(request: Request) {
       .values({ ownerId: user.id, ...values })
       .returning();
     return NextResponse.json(created);
-  } catch {
-    return NextResponse.json(
-      {
-        error:
-          "Tabulky bookingu ještě nejsou v databázi. Spusťte migraci 0016_booking_settings.sql na produkční DB.",
-      },
-      { status: 503 },
-    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Nastavení bookingu se nepodařilo uložit.";
+    return NextResponse.json({ error: message }, { status: 503 });
   }
 }
