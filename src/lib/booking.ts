@@ -48,38 +48,47 @@ export async function getBookingCalendarAccount() {
 
 export async function getBookingConfig(ownerId?: string | null): Promise<BookingConfig> {
   if (!ownerId) return { ...DEFAULT_BOOKING_CONFIG };
-  const db = getDb();
-  const [row] = await db
-    .select()
-    .from(bookingSettings)
-    .where(eq(bookingSettings.ownerId, ownerId))
-    .limit(1);
-  if (!row) return { ...DEFAULT_BOOKING_CONFIG };
-  const workdays = Array.isArray(row.workdays)
-    ? row.workdays.map((d) => Number(d)).filter((d) => d >= 0 && d <= 6)
-    : DEFAULT_BOOKING_CONFIG.workdays;
-  return {
-    slotMinutes: [15, 20, 30, 45, 60].includes(row.slotMinutes) ? row.slotMinutes : 30,
-    workdayStartHour: Math.min(23, Math.max(0, row.workdayStartHour ?? 9)),
-    workdayEndHour: Math.min(24, Math.max(1, row.workdayEndHour ?? 17)),
-    workdays: workdays.length ? workdays : DEFAULT_BOOKING_CONFIG.workdays,
-    timezone: row.timezone || BOOKING_TIMEZONE,
-    bufferMinutes: Math.max(0, Math.min(120, row.bufferMinutes ?? 0)),
-  };
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(bookingSettings)
+      .where(eq(bookingSettings.ownerId, ownerId))
+      .limit(1);
+    if (!row) return { ...DEFAULT_BOOKING_CONFIG };
+    const workdays = Array.isArray(row.workdays)
+      ? row.workdays.map((d) => Number(d)).filter((d) => d >= 0 && d <= 6)
+      : DEFAULT_BOOKING_CONFIG.workdays;
+    return {
+      slotMinutes: [15, 20, 30, 45, 60].includes(row.slotMinutes) ? row.slotMinutes : 30,
+      workdayStartHour: Math.min(23, Math.max(0, row.workdayStartHour ?? 9)),
+      workdayEndHour: Math.min(24, Math.max(1, row.workdayEndHour ?? 17)),
+      workdays: workdays.length ? workdays : DEFAULT_BOOKING_CONFIG.workdays,
+      timezone: row.timezone || BOOKING_TIMEZONE,
+      bufferMinutes: Math.max(0, Math.min(120, row.bufferMinutes ?? 0)),
+    };
+  } catch {
+    // Tables may not exist yet before migration — fall back to defaults
+    return { ...DEFAULT_BOOKING_CONFIG };
+  }
 }
 
 /** Bloky (dovolená apod.), které překrývají daný den. */
 export async function getBookingBlocksForDay(ownerId: string, dayStart: Date, dayEnd: Date) {
-  const db = getDb();
-  return db
-    .select()
-    .from(bookingBlocks)
-    .where(
-      and(
-        eq(bookingBlocks.ownerId, ownerId),
-        sql`${bookingBlocks.startsAt} < ${dayEnd} AND ${bookingBlocks.endsAt} > ${dayStart}`,
-      ),
-    );
+  try {
+    const db = getDb();
+    return await db
+      .select()
+      .from(bookingBlocks)
+      .where(
+        and(
+          eq(bookingBlocks.ownerId, ownerId),
+          sql`${bookingBlocks.startsAt} < ${dayEnd} AND ${bookingBlocks.endsAt} > ${dayStart}`,
+        ),
+      );
+  } catch {
+    return [];
+  }
 }
 
 /** Převede "místní" datum+čas v dané časové zóně na UTC Date (funguje i přes DST). */
