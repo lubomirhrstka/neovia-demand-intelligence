@@ -3493,6 +3493,16 @@ button.metric:hover {
   background: white;
   color: #315355;
 }
+.outreach-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.outreach-box button.secondary {
+  background: white;
+  color: #315355;
+}
 .qualification-panel {
   padding: 16px 22px;
   border-bottom: 1px solid #e4eeee;

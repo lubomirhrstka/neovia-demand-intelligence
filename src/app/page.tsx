@@ -1228,9 +1228,10 @@ function EmailClient({ note }: { note: (s: string) => void }) {
   const [emailDetailLoading, setEmailDetailLoading] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
+  const [composeContext, setComposeContext] = useState<Pick<LocalEmailDraft, "contactId" | "companyId" | "opportunityId" | "demandId" | "source"> | null>(null);
   const [composeAttachments, setComposeAttachments] = useState<Array<{ name: string; type: string; data: string }>>([]);
   const [trackOpen, setTrackOpen] = useState(false);
-  const [localDrafts, setLocalDrafts] = useState<Array<{ to: string; subject: string; body: string; source?: string; createdAt?: string }>>([]);
+  const [localDrafts, setLocalDrafts] = useState<LocalEmailDraft[]>([]);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [contactCandidate, setContactCandidate] = useState<{ name: string; email: string; phone: string; company: string; duplicate: boolean } | null>(null);
   const [creatingContact, setCreatingContact] = useState(false);
@@ -1242,20 +1243,43 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     } catch {
       setLocalDrafts([]);
     }
+    const pending = window.localStorage.getItem("neovia-compose-draft");
+    if (pending) {
+      window.localStorage.removeItem("neovia-compose-draft");
+      try {
+        const draft = JSON.parse(pending) as LocalEmailDraft;
+        setCompose({ to: draft.to || "", subject: draft.subject || "", body: draft.body || "" });
+        setComposeContext({
+          contactId: draft.contactId || null,
+          companyId: draft.companyId || null,
+          opportunityId: draft.opportunityId || null,
+          demandId: draft.demandId || null,
+          source: draft.source,
+        });
+        setFolder("review");
+        setComposeOpen(true);
+      } catch {
+        note("Koncept se nepodařilo otevřít v e-mailu.");
+      }
+    }
   }, []);
   const countFor = (labelId: string) => mailData?.labels.find((label) => label.id === labelId)?.messagesTotal || 0;
   const reviewItems = [
     ...localDrafts.map((draft) => ({
+      id: draft.id,
       subject: draft.subject || "Koncept bez předmětu",
       contact: draft.to || "Příjemce neuveden",
       company: draft.source || "Interní koncept",
       state: "Koncept",
+      draft,
     })),
     {
+      id: undefined,
       subject: "Cold e-mail ke kontrole",
       contact: "Vyberte kontakt v CRM",
       company: "Koncepty vznikají z karty kontaktu nebo poptávky",
       state: "Připraveno",
+      draft: null,
     },
   ];
   const followupItems = [
@@ -1291,7 +1315,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       .finally(() => setMailLoading(false));
   }, [folder, status?.connected]);
   const selectedFolder = folders.find((item) => item.id === folder) || folders[0];
-  const sampleQueue = (folder === "followups" ? followupItems : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
+  const sampleQueue = (folder === "followups" ? followupItems.map((item) => ({ ...item, id: undefined, draft: null })) : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
   const filteredMessages = (mailData?.messages || []).filter((item) =>
     `${item.subject} ${item.from} ${item.fromEmail} ${item.snippet}`.toLowerCase().includes(search.toLowerCase()),
   );
@@ -1405,11 +1429,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     }
   };
   const saveComposeDraft = () => {
-    const draft = { ...compose, source: "E-mail klient", createdAt: new Date().toISOString() };
-    saveLocalEmailDraft(draft);
+    const draft = saveLocalEmailDraft({ ...compose, ...(composeContext || {}), source: composeContext?.source || "E-mail klient" });
     setLocalDrafts((current) => [draft, ...current].slice(0, 50));
     setComposeOpen(false);
     setCompose({ to: "", subject: "", body: "" });
+    setComposeContext(null);
     setComposeAttachments([]);
     setTrackOpen(false);
     note("Koncept e-mailu je uložený ke kontrole v aplikaci.");
@@ -1440,8 +1464,24 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "E-mail se nepodařilo odeslat.");
+      if (composeContext?.contactId || composeContext?.companyId || composeContext?.opportunityId) {
+        const gmailLink = data.id ? `https://mail.google.com/mail/u/0/#all/${data.id}` : "";
+        await fetch("/api/activities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "email",
+            subject: `Odeslaný e-mail: ${compose.subject}`,
+            note: gmailLink ? `Archivovaný e-mail: ${gmailLink}` : "E-mail byl odeslaný přes připojený Gmail účet.",
+            contactId: composeContext.contactId || null,
+            companyId: composeContext.companyId || null,
+            opportunityId: composeContext.opportunityId || null,
+          }),
+        }).catch(() => undefined);
+      }
       setComposeOpen(false);
       setCompose({ to: "", subject: "", body: "" });
+      setComposeContext(null);
       setComposeAttachments([]);
       setTrackOpen(false);
       note(data.trackingId ? `E-mail byl odeslaný. Tracking ID: ${data.trackingId}` : "E-mail byl odeslaný přes připojený Gmail účet.");
@@ -1558,7 +1598,25 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               <div className="empty-state">V této složce není žádná zpráva odpovídající filtru.</div>
             )}
             {(!status?.connected || ["review", "followups"].includes(folder)) && sampleQueue.map((item) => (
-              <button type="button" key={item.subject + item.state} onClick={() => note("Po připojení Gmail API se zde otevře detail e-mailu a vazby na CRM.")}>
+              <button
+                type="button"
+                key={(item.id || item.subject) + item.state}
+                onClick={() => {
+                  if (!item.draft) {
+                    note("Koncept vznikne z karty kontaktu, poptávky nebo příležitosti.");
+                    return;
+                  }
+                  setCompose({ to: item.draft.to || "", subject: item.draft.subject || "", body: item.draft.body || "" });
+                  setComposeContext({
+                    contactId: item.draft.contactId || null,
+                    companyId: item.draft.companyId || null,
+                    opportunityId: item.draft.opportunityId || null,
+                    demandId: item.draft.demandId || null,
+                    source: item.draft.source,
+                  });
+                  setComposeOpen(true);
+                }}
+              >
                 <span className="avatar soft">{item.subject.slice(0, 2).toUpperCase()}</span>
                 <div>
                   <b>{item.subject}</b>
@@ -1741,7 +1799,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               </div>
             </div>
             <footer>
-              <button className="secondary" type="button" onClick={() => setComposeOpen(false)}>Zavřít</button>
+              <button className="secondary" type="button" onClick={() => { setComposeOpen(false); setComposeContext(null); }}>Zavřít</button>
               <button className="primary" type="button" disabled={!compose.to.trim() || !compose.subject.trim()} onClick={saveComposeDraft}>
                 Uložit koncept
               </button>
@@ -1960,12 +2018,30 @@ const outreachDraft = (d: ImportedDemand) => {
   const company = d.company || "vaší společnosti";
   return `Dobrý den,\n\nzaznamenal jsem, že ${company} řeší pozici ${role}. V NEOVIA se zaměřujeme na IT outsourcing a dodávku ověřených specialistů, včetně oblastí kybernetické bezpečnosti, NIS2, ISMS a IT delivery.\n\nRád bych krátce ověřil, jestli má smysl probrat možnost rychlého doplnění kapacity nebo bodyshop spolupráce.\n\nMůžeme si zavolat na 10 minut?`;
 };
-const saveLocalEmailDraft = (draft: { to: string; subject: string; body: string; source?: string }) => {
-  const drafts = JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]") as Array<typeof draft & { createdAt: string }>;
+type LocalEmailDraft = {
+  id?: string;
+  to: string;
+  subject: string;
+  body: string;
+  source?: string;
+  createdAt?: string;
+  contactId?: string | null;
+  companyId?: string | null;
+  opportunityId?: string | null;
+  demandId?: string | null;
+};
+const draftWithSignature = (body: string) => {
+  const signature = (window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA").trim();
+  return signature ? `${body.trim()}\n\n--\n${signature}` : body.trim();
+};
+const saveLocalEmailDraft = (draft: LocalEmailDraft) => {
+  const drafts = JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]") as LocalEmailDraft[];
+  const saved = { ...draft, id: draft.id || crypto.randomUUID(), createdAt: new Date().toISOString() };
   window.localStorage.setItem(
     "neovia-email-drafts",
-    JSON.stringify([{ ...draft, createdAt: new Date().toISOString() }, ...drafts].slice(0, 50)),
+    JSON.stringify([saved, ...drafts.filter((item) => item.id !== saved.id)].slice(0, 50)),
   );
+  return saved;
 };
 const contactOutreachDraft = (contact: Contact, companyDemands: ImportedDemand[] = []) => {
   const role = companyDemands[0]?.role || companyDemands[0]?.title || contact.role || "IT kapacity";
@@ -2248,7 +2324,7 @@ function Demands({
       body: JSON.stringify({
         type: "email",
         subject,
-        note: `Koncept e-mailu:\n\n${body}`,
+        note: "Koncept e-mailu byl připraven ke kontrole v interním e-mailovém klientu.",
         companyId: demand.companyId || null,
         contactId: demand.contactId || null,
       }),
@@ -2263,15 +2339,24 @@ function Demands({
   const openDemandEmailDraft = async (demand: ImportedDemand) => {
     const to = demand.contactEmail || "";
     const subject = `Možnosti spolupráce k roli ${demand.role || demand.title}`;
-    const body = outreachDraft(demand);
-    await saveDemandEmailActivity(demand, subject, body);
+    const body = draftWithSignature(outreachDraft(demand));
     if (!to) {
       await navigator.clipboard.writeText(body);
       note("Kontakt nemá e-mail. Text konceptu je zkopírovaný do schránky.");
       return;
     }
-    saveLocalEmailDraft({ to, subject, body, source: `Poptávka ${demand.title}` });
-    note("Koncept je uložený v aplikaci ke kontrole. Gmail se samostatně neotevírá.");
+    const draft = saveLocalEmailDraft({
+      to,
+      subject,
+      body,
+      source: `Poptávka ${demand.title}`,
+      contactId: demand.contactId || null,
+      companyId: demand.companyId || null,
+      demandId: demand.id,
+    });
+    window.localStorage.setItem("neovia-compose-draft", JSON.stringify(draft));
+    note("Koncept je otevřený v e-mailu ke kontrole před odesláním.");
+    goTo("E-mail");
   };
   const removeDemand = async () => {
     if (!selected) return;
@@ -2760,7 +2845,7 @@ function Demands({
                     Vytvořit úkol
                   </button>
                   <button type="button" className="secondary" onClick={() => openDemandEmailDraft(selected)}>
-                    Otevřít v Gmailu
+                    E-mail
                   </button>
                   <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
                     Zkopírovat cold e-mail
@@ -2811,9 +2896,14 @@ function Demands({
               <div className="outreach-box">
                 <h3>Návrh cold e-mailu</h3>
                 <pre>{outreachDraft(selected)}</pre>
-                <button type="button" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
-                  Kopírovat text
-                </button>
+                <div className="outreach-actions">
+                  <button type="button" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
+                    Kopírovat text
+                  </button>
+                  <button type="button" className="secondary" onClick={() => openDemandEmailDraft(selected)}>
+                    E-mail
+                  </button>
+                </div>
               </div>
               <div className="keyword-pool">
                 <h3>Vytěžené role a štítky</h3>
