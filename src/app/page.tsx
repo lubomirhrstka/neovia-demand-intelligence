@@ -1237,6 +1237,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
   const [creatingContact, setCreatingContact] = useState(false);
   const [mailLoading, setMailLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [folder]);
   useEffect(() => {
     try {
       setLocalDrafts(JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]"));
@@ -1497,15 +1502,61 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       setSendingEmail(false);
     }
   };
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
+  };
+  const selectAllVisible = () => {
+    if (["review", "followups"].includes(folder)) {
+      const ids = sampleQueue.map((item) => String(item.id || item.subject)).filter(Boolean);
+      setSelectedIds(ids);
+      return;
+    }
+    setSelectedIds(filteredMessages.map((item) => item.id));
+  };
+  const clearSelection = () => setSelectedIds([]);
+  const deleteSelected = async () => {
+    if (!selectedIds.length) {
+      note("Nejdřív označte e-maily ke smazání.");
+      return;
+    }
+    if (!window.confirm(`Smazat ${selectedIds.length} označených položek?`)) return;
+    setBulkBusy(true);
+    try {
+      if (["review", "followups"].includes(folder)) {
+        const remaining = localDrafts.filter((draft) => !selectedIds.includes(String(draft.id)));
+        setLocalDrafts(remaining);
+        window.localStorage.setItem("neovia-email-drafts", JSON.stringify(remaining));
+        note(`Smazáno ${selectedIds.length} konceptů.`);
+        clearSelection();
+        return;
+      }
+      const response = await fetch("/api/email/gmail/messages", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "E-maily se nepodařilo smazat.");
+      note(data.message || `Přesunuto do koše: ${selectedIds.length}`);
+      clearSelection();
+      if (status?.connected) {
+        const refreshed = await fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`);
+        const payload = await refreshed.json().catch(() => null);
+        if (payload) setMailData(payload);
+      }
+    } catch (error) {
+      note(error instanceof Error ? error.message : "Smazání se nepodařilo.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
   return (
     <>
       <Title
         eyebrow="E-MAILOVÝ KLIENT"
         title="Pošta a obchodní komunikace"
         subtitle="Firemní Gmail, koncepty ke kontrole, vytěžování komunikace a vazba na kontakty, firmy a pipeline."
-        button="Nastavit Gmail"
         note={note}
-        onAction={() => goTo("Nastavení")}
       />
       <section className="email-client">
         <aside className="email-folders panel">
@@ -1528,12 +1579,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               <b>{item.count}</b>
             </button>
           ))}
-          <button className="primary connect-mail-button" type="button" onClick={() => {
-            if (status?.oauthUrl) window.open(status.oauthUrl, "_blank", "noopener,noreferrer");
-            else note(`Chybí OAuth údaje: ${(status?.missing || ["GOOGLE_GMAIL_CLIENT_ID", "GOOGLE_GMAIL_CLIENT_SECRET"]).join(", ")}`);
-          }}>
-            Připojit Gmail
-          </button>
+
         </aside>
         <section className="panel email-pane">
           <div className="panel-header">
@@ -1548,6 +1594,15 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               <Search size={17} />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Hledat v poště, kontaktech nebo konceptech" />
             </label>
+            <button className="secondary" type="button" onClick={selectAllVisible}>
+              Označit vše
+            </button>
+            <button className="secondary" type="button" onClick={clearSelection} disabled={!selectedIds.length}>
+              Zrušit označení
+            </button>
+            <button className="secondary" type="button" onClick={deleteSelected} disabled={!selectedIds.length || bulkBusy}>
+              {bulkBusy ? "Mazání…" : `Smazat (${selectedIds.length})`}
+            </button>
             <button className="secondary" onClick={() => setComposeOpen(true)}>
               Nový e-mail
             </button>
@@ -1568,7 +1623,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               <CircleAlert size={18} />
               <div>
                 <b>OAuth údaje jsou nastavené, ale Gmail účet ještě není připojený.</b>
-                <small>Klikněte vlevo na Připojit Gmail a dokončete přihlášení přes Google.</small>
+                <small>Dokončete připojení Gmail účtu v sekci Nastavení.</small>
               </div>
             </div>
           )}
@@ -1584,47 +1639,67 @@ function EmailClient({ note }: { note: (s: string) => void }) {
           <div className="email-list">
             {mailLoading && <div className="empty-state">Načítám zprávy z Gmailu…</div>}
             {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && filteredMessages.map((item) => (
-              <button type="button" key={item.id} onClick={() => openEmail(item)}>
-                <span className="avatar soft">{(item.from || item.subject).slice(0, 2).toUpperCase()}</span>
-                <div>
-                  <b>{item.subject}</b>
-                  <small>{item.from} · {item.fromEmail || item.date}</small>
-                  <small>{item.snippet}</small>
-                </div>
-                <span className="source-tag">{item.labels?.includes("UNREAD") ? "Nepřečteno" : "Gmail"}</span>
-              </button>
+              <div key={item.id} className={`email-row ${selectedIds.includes(item.id) ? "selected" : ""}`}>
+                <label className="email-select" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                  />
+                </label>
+                <button type="button" className="email-row-main" onClick={() => openEmail(item)}>
+                  <span className="avatar soft">{(item.from || item.subject).slice(0, 2).toUpperCase()}</span>
+                  <div>
+                    <b>{item.subject}</b>
+                    <small>{item.from} · {item.fromEmail || item.date}</small>
+                    <small>{item.snippet}</small>
+                  </div>
+                  <span className="source-tag">{item.labels?.includes("UNREAD") ? "Nepřečteno" : "Gmail"}</span>
+                </button>
+              </div>
             ))}
             {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && !filteredMessages.length && (
               <div className="empty-state">V této složce není žádná zpráva odpovídající filtru.</div>
             )}
-            {(!status?.connected || ["review", "followups"].includes(folder)) && sampleQueue.map((item) => (
-              <button
-                type="button"
-                key={(item.id || item.subject) + item.state}
-                onClick={() => {
-                  if (!item.draft) {
-                    note("Koncept vznikne z karty kontaktu, poptávky nebo příležitosti.");
-                    return;
-                  }
-                  setCompose({ to: item.draft.to || "", subject: item.draft.subject || "", body: item.draft.body || "" });
-                  setComposeContext({
-                    contactId: item.draft.contactId || null,
-                    companyId: item.draft.companyId || null,
-                    opportunityId: item.draft.opportunityId || null,
-                    demandId: item.draft.demandId || null,
-                    source: item.draft.source,
-                  });
-                  setComposeOpen(true);
-                }}
-              >
-                <span className="avatar soft">{item.subject.slice(0, 2).toUpperCase()}</span>
-                <div>
-                  <b>{item.subject}</b>
-                  <small>{item.contact} · {item.company}</small>
-                </div>
-                <span className="source-tag">{item.state}</span>
-              </button>
-            ))}
+            {(!status?.connected || ["review", "followups"].includes(folder)) && sampleQueue.map((item) => {
+              const rowId = String(item.id || item.subject);
+              return (
+              <div key={rowId + item.state} className={`email-row ${selectedIds.includes(rowId) ? "selected" : ""}`}>
+                <label className="email-select" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(rowId)}
+                    onChange={() => toggleSelected(rowId)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="email-row-main"
+                  onClick={() => {
+                    if (!item.draft) {
+                      note("Koncept vznikne z karty kontaktu, poptávky nebo příležitosti.");
+                      return;
+                    }
+                    setCompose({ to: item.draft.to || "", subject: item.draft.subject || "", body: item.draft.body || "" });
+                    setComposeContext({
+                      contactId: item.draft.contactId || null,
+                      companyId: item.draft.companyId || null,
+                      opportunityId: item.draft.opportunityId || null,
+                      demandId: item.draft.demandId || null,
+                      source: item.draft.source,
+                    });
+                    setComposeOpen(true);
+                  }}
+                >
+                  <span className="avatar soft">{item.subject.slice(0, 2).toUpperCase()}</span>
+                  <div>
+                    <b>{item.subject}</b>
+                    <small>{item.contact} · {item.company}</small>
+                  </div>
+                  <span className="source-tag">{item.state}</span>
+                </button>
+              </div>
+            );})}
           </div>
           <div className="email-rules">
             <b>Gmail API funkce</b>
