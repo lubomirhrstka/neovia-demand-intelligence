@@ -3998,3 +3998,112 @@ button.metric:hover {
 .connect-mail-button {
   display: none !important;
 }
+.booking-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #f4f8f7;
+  font-family: Manrope, sans-serif;
+}
+.booking-card {
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px #10252722;
+  padding: 32px;
+}
+.booking-eyebrow {
+  font: 700 10px "DM Mono", monospace;
+  letter-spacing: 1px;
+  color: #0c8175;
+  margin: 0 0 8px;
+}
+.booking-card h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  color: #183334;
+}
+.booking-subtitle {
+  color: #627b7d;
+  margin: 0 0 20px;
+}
+.booking-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.booking-days button,
+.booking-slots button {
+  border: 1px solid #dbe9e7;
+  background: #fbfdfd;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: 700 12px Manrope;
+  color: #183334;
+  cursor: pointer;
+}
+.booking-days button.active,
+.booking-slots button.active {
+  background: #0c8175;
+  border-color: #0c8175;
+  color: #fff;
+}
+.booking-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  min-height: 40px;
+}
+.booking-empty {
+  color: #869899;
+  font-size: 13px;
+}
+.booking-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid #edf1f0;
+  padding-top: 20px;
+}
+.booking-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 700 11px Manrope;
+  color: #536f70;
+}
+.booking-form input,
+.booking-form textarea {
+  border: 1px solid #dbe9e7;
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: 400 13px Manrope;
+  color: #183334;
+}
+.booking-error {
+  color: #b3261e;
+  font-size: 12px;
+  margin: 0;
+}
+.booking-submit {
+  border: 0;
+  background: #0c8175;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  font: 700 13px Manrope;
+  cursor: pointer;
+}
+.booking-confirmed h1 {
+  color: #0c8175;
+}
+.booking-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #0c8175;
+  font-weight: 700;
+}

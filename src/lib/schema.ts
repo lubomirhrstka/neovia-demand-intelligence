@@ -214,6 +214,25 @@ export const ignoredCalendarEvents = pgTable("ignored_calendar_events", {
   ownerId: text("owner_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+export const savedViews = pgTable("saved_views", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  view: varchar("view", { length: 40 }).notNull(),
+  name: text("name").notNull(),
+  filters: jsonb("filters").$type<Record<string, unknown>>().notNull().default({}),
+  ownerId: text("owner_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const bookings = pgTable("bookings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: text("owner_id").references(() => users.id).notNull(),
+  guestName: text("guest_name").notNull(),
+  guestEmail: text("guest_email").notNull(),
+  note: text("note"),
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  externalEventId: text("external_event_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 export const activities = pgTable("activities", {
   id: uuid("id").defaultRandom().primaryKey(),
   type: varchar("type", { length: 40 }).notNull(),
