@@ -104,7 +104,11 @@ export async function PUT(request: Request) {
       .returning();
     return NextResponse.json(created);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Nastavení bookingu se nepodařilo uložit.";
+    const raw = e instanceof Error ? e.message : String(e);
+    const message =
+      raw.includes("does not exist") || raw.includes("Failed query")
+        ? "Tabulky bookingu se nepodařilo vytvořit. Zkuste znovu po nasazení, nebo spusťte SQL migraci v Neon konzoli."
+        : raw;
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }
