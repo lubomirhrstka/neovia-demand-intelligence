@@ -379,13 +379,31 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
                       key={`g-${item.event.id}-${item.event.start || ""}`}
                       className="calendar-item google"
                       onClick={() => openGoogleEventInApp(item.event)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openGoogleEventInApp(item.event);
+                        }
+                      }}
                       role="button"
                       tabIndex={0}
                     >
                       <b>{item.event.title}</b>
                     </div>
                   ) : (
-                    <div className="calendar-item" key={item.task.id} onClick={() => openForEdit(item.task)} role="button" tabIndex={0}>
+                    <div
+                      className="calendar-item"
+                      key={item.task.id}
+                      onClick={() => openForEdit(item.task)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openForEdit(item.task);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
                       <b>{item.task.title}</b>
                     </div>
                   ),

@@ -200,6 +200,77 @@
 .danger-card .secondary {
   margin-top: 15px;
 }
+.notifications-wrap {
+  position: relative;
+}
+.notifications-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: min(360px, calc(100vw - 32px));
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(15, 48, 48, 0.16);
+  overflow: hidden;
+}
+.notifications-panel header {
+  position: static;
+  min-height: auto;
+  padding: 14px 16px;
+  border-bottom: 1px solid #edf1f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.notifications-panel header b,
+.notifications-panel header span {
+  font-size: 12px;
+}
+.notifications-panel header span {
+  color: #08796d;
+  background: #e4f5f1;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-weight: 800;
+}
+.notification-row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #edf1f0;
+  background: #fff;
+  padding: 12px 16px;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  color: #183334;
+}
+.notification-row:hover,
+.notification-row:focus-visible {
+  background: #f5fbfa;
+  outline: none;
+}
+.notification-row b {
+  font-size: 12px;
+}
+.notification-row small {
+  color: #627b7d;
+}
+.notification-row span {
+  width: max-content;
+  font-size: 10px;
+  font-weight: 800;
+  color: #08796d;
+  background: #e4f5f1;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.notification-row span.warning {
+  color: #8b5800;
+  background: #fff1d6;
+}
 @media (max-width: 720px) {
   .settings-grid {
     grid-template-columns: 1fr;
@@ -1600,8 +1671,24 @@ button.metric:hover {
 .contact-row,
 .mini-task,
 .pool article,
-.task {
+.task,
+.source-card,
+.duplicate-group-card,
+.calendar-item,
+.clickable-card {
   cursor: pointer;
+}
+.clickable-card,
+.pool article,
+.task,
+.source-card,
+.duplicate-group-card,
+.calendar-item {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 .interactive-row {
   width: 100%;
@@ -1616,9 +1703,24 @@ button.metric:hover {
 }
 .interactive-row:hover,
 .interactive-row:focus-visible,
-.contact-row:hover {
+.list-row:hover,
+.list-row:focus-visible,
+.contact-row:hover,
+.contact-row:focus-visible,
+.mini-task:hover,
+.mini-task:focus-visible,
+.duplicate-group-card:hover,
+.duplicate-group-card:focus-visible {
   background: #f8fbfa;
   box-shadow: inset 3px 0 0 #0b8177;
+}
+.clickable-card:focus-visible,
+.pool article:focus-visible,
+.task:focus-visible,
+.source-card:focus-visible,
+.calendar-item:focus-visible {
+  outline: 3px solid #14847726;
+  outline-offset: 2px;
 }
 .row-arrow {
   display: inline-flex;
@@ -2293,6 +2395,14 @@ button.metric:hover {
   border-radius: 9px;
   padding: 18px;
 }
+.pool article:hover,
+.pool article:focus-visible,
+.source-card:hover,
+.source-card:focus-visible {
+  border-color: #a9d5d0;
+  box-shadow: 0 14px 34px rgba(20, 68, 68, 0.09);
+  transform: translateY(-1px);
+}
 .pool article > div {
   display: flex;
   justify-content: space-between;
@@ -2932,6 +3042,14 @@ button.metric:hover {
   margin-bottom: 8px;
   font-size: 11px;
   cursor: pointer;
+}
+.calendar-item:hover,
+.calendar-item:focus-visible,
+.task:hover,
+.task:focus-visible {
+  border-color: #a9d5d0;
+  box-shadow: 0 10px 24px rgba(20, 68, 68, 0.1);
+  transform: translateY(-1px);
 }
 .calendar-item.google {
   border-left-color: #6d8ee8;

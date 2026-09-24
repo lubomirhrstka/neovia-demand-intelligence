@@ -37,6 +37,7 @@ import { Title, Metric, Header, Row } from "@/components/dashboard-widgets";
 import { Pipeline } from "@/components/Pipeline";
 import { Tasks } from "@/components/Tasks";
 import { CalendarView } from "@/components/CalendarView";
+import { useStalledOpportunities } from "@/lib/use-stalled-opportunities";
 import packageInfo from "../../package.json";
 
 const APP_VERSION = packageInfo.version;
@@ -84,11 +85,13 @@ const nav: { label: View; icon: typeof LayoutDashboard }[] = [
 
 export default function Home() {
   const { data: session, isPending } = authClient.useSession();
+  const { stalled } = useStalledOpportunities();
   const [view, setView] = useState<View>("Přehled"),
     [focus, setFocus] = useState(""),
     [query, setQuery] = useState(""),
     [onlyFocus, setOnlyFocus] = useState(false),
     [toast, setToast] = useState(""),
+    [notificationsOpen, setNotificationsOpen] = useState(false),
     [contactList, setContactList] = useState<Contact[]>(initialContacts);
   useEffect(() => {
     const saved = window.localStorage.getItem("neovia-contacts");
@@ -188,22 +191,50 @@ export default function Home() {
             <b>/</b>
             <strong>{view}</strong>
           </div>
-          <div>
+          <div className="notifications-wrap">
             <button
               className="icon"
-              onClick={() => note("Nemáte žádná nová systémová upozornění.")}
+              onClick={() => setNotificationsOpen((open) => !open)}
             >
               <Bell size={18} />
-              <em />
+              {stalled.length > 0 && <em />}
             </button>
-            <span className="avatar ink">
-              {session.user.name
-                .split(" ")
-                .map((x) => x[0])
-                .slice(0, 2)
-                .join("")}
-            </span>
+            {notificationsOpen && (
+              <div className="notifications-panel">
+                <header>
+                  <b>Vyžaduje pozornost</b>
+                  <span>{stalled.length}</span>
+                </header>
+                {stalled.length === 0 ? (
+                  <div className="empty-state">Žádná obchodní příležitost teď nečeká na krok.</div>
+                ) : (
+                  stalled.slice(0, 8).map((item) => (
+                    <button
+                      key={item.id}
+                      className="notification-row"
+                      type="button"
+                      onClick={() => {
+                        window.localStorage.setItem("neovia-open-opportunity", item.id);
+                        setNotificationsOpen(false);
+                        goTo("Pipeline");
+                      }}
+                    >
+                      <b>{item.company || item.title}</b>
+                      <small>{item.title}</small>
+                      <span className={item.reason === "po termínu" ? "warning" : ""}>{item.reason}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+          <span className="avatar ink">
+            {session.user.name
+              .split(" ")
+              .map((x) => x[0])
+              .slice(0, 2)
+              .join("")}
+          </span>
         </header>
         <div className="page">
           {view === "Přehled" && (
@@ -1051,7 +1082,19 @@ function Dashboard({
             </div>
           )}
           {todayTasks.slice(0, 3).map((t, i) => (
-            <div className="mini-task" key={t.id} onClick={() => goTo("Úkoly")} role="button" tabIndex={0}>
+            <div
+              className="mini-task clickable-card"
+              key={t.id}
+              onClick={() => goTo("Úkoly")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  goTo("Úkoly");
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <button onClick={(event) => { event.stopPropagation(); completeDashboardTask(t); }} />
               <div>
                 <button className="link-action task-title-action" type="button" onClick={(event) => { event.stopPropagation(); goTo("Úkoly"); }}>
@@ -1112,7 +1155,19 @@ function Dashboard({
             </div>
           ) : (
             activities.slice(0, 4).map((activity) => (
-              <div className="mini-task" key={activity.id} onClick={() => goTo("Kontakty")} role="button" tabIndex={0}>
+              <div
+                className="mini-task clickable-card"
+                key={activity.id}
+                onClick={() => goTo("Kontakty")}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    goTo("Kontakty");
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
                 <button onClick={(event) => { event.stopPropagation(); goTo("Kontakty"); }} />
                 <div>
                   <b>{activity.subject}</b>
@@ -2518,7 +2573,19 @@ function Demands({
           displayed.map((d) => {
             const tags = keywordPool(d);
             return (
-            <div className="list-row" key={d.id} onClick={() => setSelected(d)} role="button" tabIndex={0}>
+            <div
+              className="list-row clickable-card"
+              key={d.id}
+              onClick={() => setSelected(d)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelected(d);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <div className="demand-cell">
                 <input
                   type="checkbox"
@@ -3739,7 +3806,19 @@ function Contacts({
           ) : (
             <div className="duplicate-group-list">
               {companyDuplicateGroups().map((group) => (
-                <div className="duplicate-group-card" key={group.map((company) => company.id).join("-")}>
+                <div
+                  className="duplicate-group-card clickable-card"
+                  key={group.map((company) => company.id).join("-")}
+                  onClick={() => openMergeGroup("company", group)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openMergeGroup("company", group);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div>
                     <b>{group.map((company) => company.name).join(" · ")}</b>
                     <small>
@@ -3749,7 +3828,7 @@ function Contacts({
                         .join(" | ") || "Bez doplňujících údajů"}
                     </small>
                   </div>
-                  <button type="button" className="merge-trigger" onClick={() => openMergeGroup("company", group)}>
+                  <button type="button" className="merge-trigger" onClick={(event) => { event.stopPropagation(); openMergeGroup("company", group); }}>
                     Sloučit skupinu
                   </button>
                 </div>
@@ -3772,7 +3851,19 @@ function Contacts({
           ) : (
             <div className="duplicate-group-list">
               {contactDuplicateGroups().map((group) => (
-                <div className="duplicate-group-card" key={group.map((contact) => contact.id).join("-")}>
+                <div
+                  className="duplicate-group-card clickable-card"
+                  key={group.map((contact) => contact.id).join("-")}
+                  onClick={() => openMergeGroup("contact", group)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openMergeGroup("contact", group);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div>
                     <b>{group.map((contact) => contact.name).join(" · ")}</b>
                     <small>
@@ -3782,7 +3873,7 @@ function Contacts({
                         .join(" | ") || "Bez doplňujících údajů"}
                     </small>
                   </div>
-                  <button type="button" className="merge-trigger" onClick={() => openMergeGroup("contact", group)}>
+                  <button type="button" className="merge-trigger" onClick={(event) => { event.stopPropagation(); openMergeGroup("contact", group); }}>
                     Sloučit skupinu
                   </button>
                 </div>
@@ -3809,8 +3900,20 @@ function Contacts({
           </div>
         ) : (
           displayedContacts.map((c) => (
-            <div className="contact-row" key={c.id || c.email} onClick={() => openDetail(c)} role="button" tabIndex={0}>
-              <button className="person person-link" onClick={() => openDetail(c)}>
+            <div
+              className="contact-row clickable-card"
+              key={c.id || c.email}
+              onClick={() => openDetail(c)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openDetail(c);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
+              <button className="person person-link" onClick={(event) => { event.stopPropagation(); openDetail(c); }}>
                 <span className="avatar color">
                   {c.name
                     .split(" ")
@@ -3853,7 +3956,7 @@ function Contacts({
                   </button>
                 </span>
               )}
-              <button className="quiet" onClick={() => openDetail(c)}>
+              <button className="quiet" onClick={(event) => { event.stopPropagation(); openDetail(c); }}>
                 <MoreHorizontal size={18} />
               </button>
             </div>
@@ -3877,8 +3980,20 @@ function Contacts({
             </div>
           ) : (
             displayedCompanies.map((company) => (
-              <div className="contact-row company-row" key={company.id} onClick={() => openCompanyDetail(company)} role="button" tabIndex={0}>
-                <button className="person person-link" onClick={() => openCompanyDetail(company)}>
+              <div
+                className="contact-row company-row clickable-card"
+                key={company.id}
+                onClick={() => openCompanyDetail(company)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openCompanyDetail(company);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <button className="person person-link" onClick={(event) => { event.stopPropagation(); openCompanyDetail(company); }}>
                   <span className="avatar blue">
                     {company.name
                       .split(" ")
@@ -3914,7 +4029,7 @@ function Contacts({
                     </button>
                   </span>
                 )}
-                <button className="quiet" onClick={() => openCompanyDetail(company)}>
+                <button className="quiet" onClick={(event) => { event.stopPropagation(); openCompanyDetail(company); }}>
                   <MoreHorizontal size={18} />
                 </button>
               </div>
@@ -4717,7 +4832,20 @@ function Sources({ note }: { note: (s: string) => void }) {
         </div>
       </div>
       <div className="source-grid">
-        <article className="source-card active-source">
+        <article
+          className="source-card active-source clickable-card"
+          onClick={() => {
+            if (!monitorRunning) runMonitor();
+          }}
+          onKeyDown={(event) => {
+            if ((event.key === "Enter" || event.key === " ") && !monitorRunning) {
+              event.preventDefault();
+              runMonitor();
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo dark">JM</span>
             <b>RUČNĚ</b>
@@ -4732,7 +4860,7 @@ function Sources({ note }: { note: (s: string) => void }) {
             <button
               className="primary"
               disabled={monitorRunning}
-              onClick={runMonitor}
+              onClick={(event) => { event.stopPropagation(); runMonitor(); }}
             >
               {monitorRunning ? "Kontroluji…" : "Spustit nyní"}
             </button>
@@ -4744,7 +4872,20 @@ function Sources({ note }: { note: (s: string) => void }) {
             </div>
           )}
         </article>
-        <article className="source-card active-source">
+        <article
+          className="source-card active-source clickable-card"
+          onClick={() => {
+            if (!running) run();
+          }}
+          onKeyDown={(event) => {
+            if ((event.key === "Enter" || event.key === " ") && !running) {
+              event.preventDefault();
+              run();
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo">M</span>
             <b>AKTIVNÍ</b>
@@ -4756,7 +4897,7 @@ function Sources({ note }: { note: (s: string) => void }) {
           </p>
           <footer>
             <span>Aktualizace podle veřejného přírůstku</span>
-            <button className="primary" disabled={running} onClick={run}>
+            <button className="primary" disabled={running} onClick={(event) => { event.stopPropagation(); run(); }}>
               {running ? "Importuji…" : "Spustit import"}
             </button>
           </footer>
@@ -4767,7 +4908,22 @@ function Sources({ note }: { note: (s: string) => void }) {
             </div>
           )}
         </article>
-        <article className="source-card">
+        <article
+          className="source-card clickable-card"
+          onClick={() =>
+            note(
+              "Pro LinkedIn je nutný schválený Talent Solutions přístup.",
+            )
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              note("Pro LinkedIn je nutný schválený Talent Solutions přístup.");
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo dark">in</span>
             <b className="pending">ČEKÁ NA PŘÍSTUP</b>
@@ -4781,17 +4937,33 @@ function Sources({ note }: { note: (s: string) => void }) {
             <span>OAuth a smluvní přístup</span>
             <button
               className="secondary"
-              onClick={() =>
+              onClick={(event) => {
+                event.stopPropagation();
                 note(
                   "Pro LinkedIn je nutný schválený Talent Solutions přístup.",
-                )
-              }
+                );
+              }}
             >
               Zjistit podmínky
             </button>
           </footer>
         </article>
-        <article className="source-card active-source">
+        <article
+          className="source-card active-source clickable-card"
+          onClick={() => {
+            goTo("Nastavení");
+            note("Gmail nastavíte v sekci Nastavení.");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              goTo("Nastavení");
+              note("Gmail nastavíte v sekci Nastavení.");
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo">GM</span>
             <b>KONCEPTY</b>
@@ -4806,7 +4978,8 @@ function Sources({ note }: { note: (s: string) => void }) {
             <span>Bezpečný režim bez automatického odeslání</span>
             <button
               className="secondary"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 goTo("Nastavení");
                 note("Gmail nastavíte v sekci Nastavení.");
               }}
@@ -4815,7 +4988,22 @@ function Sources({ note }: { note: (s: string) => void }) {
             </button>
           </footer>
         </article>
-        <article className="source-card">
+        <article
+          className="source-card clickable-card"
+          onClick={() =>
+            note(
+              "StartupJobs API potřebuje Bearer token z firemního účtu. Jakmile ho budete mít, doplním plně automatický konektor.",
+            )
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              note("StartupJobs API potřebuje Bearer token z firemního účtu. Jakmile ho budete mít, doplním plně automatický konektor.");
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo">SJ</span>
             <b className="pending">ČEKÁ NA TOKEN</b>
@@ -4830,17 +5018,33 @@ function Sources({ note }: { note: (s: string) => void }) {
             <span>Připraveno pro API přístup</span>
             <button
               className="secondary"
-              onClick={() =>
+              onClick={(event) => {
+                event.stopPropagation();
                 note(
                   "StartupJobs API potřebuje Bearer token z firemního účtu. Jakmile ho budete mít, doplním plně automatický konektor.",
-                )
-              }
+                );
+              }}
             >
               Co chybí
             </button>
           </footer>
         </article>
-        <article className="source-card">
+        <article
+          className="source-card clickable-card"
+          onClick={() =>
+            note(
+              "JenPráce zatím nechávám mimo automatický import, aby do databáze nepadaly nerelevantní katalogové položky.",
+            )
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              note("JenPráce zatím nechávám mimo automatický import, aby do databáze nepadaly nerelevantní katalogové položky.");
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo orange">JP</span>
             <b className="pending">KANDIDÁT</b>
@@ -4855,17 +5059,29 @@ function Sources({ note }: { note: (s: string) => void }) {
             <span>Čeká na ověřený zdroj dat</span>
             <button
               className="secondary"
-              onClick={() =>
+              onClick={(event) => {
+                event.stopPropagation();
                 note(
                   "JenPráce zatím nechávám mimo automatický import, aby do databáze nepadaly nerelevantní katalogové položky.",
-                )
-              }
+                );
+              }}
             >
               Stav zdroje
             </button>
           </footer>
         </article>
-        <article className="source-card">
+        <article
+          className="source-card clickable-card"
+          onClick={() => setManualOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setManualOpen(true);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <div>
             <span className="source-logo orange">CSV</span>
             <b>AKTIVNÍ</b>
@@ -4877,7 +5093,7 @@ function Sources({ note }: { note: (s: string) => void }) {
           </p>
           <footer>
             <span>CSV, TSV nebo řádkový text</span>
-            <button className="primary" onClick={() => setManualOpen(true)}>
+            <button className="primary" onClick={(event) => { event.stopPropagation(); setManualOpen(true); }}>
               Importovat
             </button>
           </footer>

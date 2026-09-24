@@ -349,6 +349,12 @@ export function Tasks({ note }: { note: (s: string) => void }) {
                 className={task.status === "done" ? "task done" : "task"}
                 key={task.id}
                 onClick={() => openTaskEditor(task)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openTaskEditor(task);
+                  }
+                }}
                 role="button"
                 tabIndex={0}
               >

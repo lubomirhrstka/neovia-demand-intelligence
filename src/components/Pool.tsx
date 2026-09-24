@@ -96,7 +96,18 @@ export function Pool({ note }: { note: (s: string) => void }) {
       ) : (
         <div className="pool">
           {rows.map((c) => (
-            <article key={c.id} onClick={() => openEdit(c)} role="button" tabIndex={0}>
+            <article
+              key={c.id}
+              onClick={() => openEdit(c)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openEdit(c);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <div>
                 <span className="avatar blue">
                   {c.name

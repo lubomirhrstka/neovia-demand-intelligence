@@ -119,7 +119,18 @@ export function Row({ d, note }: { d: Demand; note: (s: string) => void }) {
     goTo("Poptávky");
   };
   return (
-    <div className="demand-row" onClick={openDemand} role="button" tabIndex={0}>
+    <div
+      className="demand-row clickable-card"
+      onClick={openDemand}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openDemand();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div>
         <span className="company">{d.company[0]}</span>
         <div>
