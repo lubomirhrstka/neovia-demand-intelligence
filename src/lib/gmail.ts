@@ -74,7 +74,8 @@ export async function gmailFetch<T>(accessToken: string, path: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data.error?.message || "Gmail API volání selhalo.");
   return data as T;
 }
@@ -89,7 +90,9 @@ export async function gmailPost<T>(accessToken: string, path: string, body: unkn
     body: JSON.stringify(body),
     cache: "no-store",
   });
-  const data = await response.json();
+  // Některé Gmail endpointy (např. batchModify) vrací při úspěchu prázdné tělo (204).
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data.error?.message || "Gmail API volání selhalo.");
   return data as T;
 }
