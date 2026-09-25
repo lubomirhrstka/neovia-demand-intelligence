@@ -94,6 +94,7 @@ export async function POST() {
       await db.update(tasks).set({
         title: item.summary || existing.title,
         kind: existing.kind || "meeting",
+        note: item.description || existing.note,
         dueAt: startsAt,
         syncedAt: now,
         updatedAt: now,
@@ -106,6 +107,7 @@ export async function POST() {
         status: "open",
         priority: 2,
         tag: "Google",
+        note: item.description || null,
         dueAt: startsAt,
         assigneeId: session.user.id,
         createdById: session.user.id,

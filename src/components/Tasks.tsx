@@ -29,6 +29,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
     [title, setTitle] = useState(""),
     [kind, setKind] = useState("task"),
     [tag, setTag] = useState(""),
+    [noteText, setNoteText] = useState(""),
     [dueAt, setDueAt] = useState(""),
     [priority, setPriority] = useState("2"),
     [companyId, setCompanyId] = useState(""),
@@ -108,6 +109,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
         title,
         kind,
         tag: tag || null,
+        note: noteText || null,
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         priority,
         companyId: companyId || null,
@@ -130,6 +132,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
     setContactQuery("");
     setKind("task");
     setTag("");
+    setNoteText("");
     load();
     note(editing ? "Úkol byl upraven." : "Úkol byl uložen do společné databáze.");
   };
@@ -138,6 +141,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
     setTitle(task?.title || "");
     setKind(task?.kind || "task");
     setTag(task?.tag || "");
+    setNoteText(task?.note || "");
     setDueAt(task?.dueAt ? task.dueAt.slice(0, 16) : "");
     setPriority(String(task?.priority || 2));
     setCompanyId(task?.companyId || "");
@@ -544,6 +548,15 @@ export function Tasks({ note }: { note: (s: string) => void }) {
                   value={tag}
                   onChange={(e) => setTag(e.target.value)}
                   placeholder="Například follow-up, nabídka, NIS2"
+                />
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                Poznámka
+                <textarea
+                  rows={3}
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Popis úkolu, poznámky z jednání…"
                 />
               </label>
               <label>

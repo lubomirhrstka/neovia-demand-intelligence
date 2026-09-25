@@ -195,6 +195,7 @@ export const tasks = pgTable("tasks", {
   status: taskStatus("status").notNull().default("open"),
   priority: integer("priority").notNull().default(2),
   tag: varchar("tag", { length: 120 }),
+  note: text("note"),
   dueAt: timestamp("due_at"),
   externalProvider: varchar("external_provider", { length: 80 }),
   externalId: text("external_id"),

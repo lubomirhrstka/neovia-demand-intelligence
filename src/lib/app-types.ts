@@ -97,6 +97,7 @@ export type TaskRecord = {
   kind?: string | null;
   priority: number;
   tag?: string | null;
+  note?: string | null;
   dueAt: string | null;
   status: string;
   externalProvider?: string | null;
@@ -124,6 +125,7 @@ export type CalendarStatus = {
 export type CalendarEventRecord = {
   id: string;
   title: string;
+  description?: string;
   start: string | null;
   end: string | null;
   link: string;

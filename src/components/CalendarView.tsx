@@ -32,6 +32,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
     [dueAt, setDueAt] = useState(""),
     [priority, setPriority] = useState("2"),
     [tag, setTag] = useState(""),
+    [noteText, setNoteText] = useState(""),
     [companyId, setCompanyId] = useState(""),
     [companyQuery, setCompanyQuery] = useState(""),
     [contactId, setContactId] = useState(""),
@@ -127,6 +128,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
     setDueAt("");
     setPriority("2");
     setTag("");
+    setNoteText("");
     setCompanyId("");
     setCompanyQuery("");
     setContactId("");
@@ -139,6 +141,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
     setDueAt(task.dueAt ? toDatetimeLocal(new Date(task.dueAt)) : "");
     setPriority(String(task.priority ?? 2));
     setTag(task.tag || "");
+    setNoteText(task.note || "");
     setCompanyId(task.companyId || "");
     setCompanyQuery(task.company || "");
     setContactId(task.contactId || "");
@@ -168,6 +171,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
         dueAt: dueAt ? new Date(dueAt).toISOString() : null,
         priority,
         tag: tag || null,
+        note: noteText || null,
         companyId: companyId || null,
         contactId: contactId || null,
       }),
@@ -235,6 +239,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: event.title || "Událost z Google kalendáře",
+        note: event.description || null,
         kind: "meeting",
         priority: 2,
         tag: "Google",
@@ -388,6 +393,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
                       role="button"
                       tabIndex={0}
                     >
+                      <span>{item.event.start ? new Date(item.event.start).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : ""}</span>
                       <b>{item.event.title}</b>
                     </div>
                   ) : (
@@ -404,6 +410,7 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
                       role="button"
                       tabIndex={0}
                     >
+                      <span>{item.task.dueAt ? new Date(item.task.dueAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : ""}</span>
                       <b>{item.task.title}</b>
                     </div>
                   ),
@@ -452,6 +459,10 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
               <label>
                 Štítek
                 <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="Například obchod, follow-up" />
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                Poznámka
+                <textarea rows={3} value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="Popis schůzky, poznámky z jednání…" />
               </label>
               <label className="search-picker">
                 Firma
