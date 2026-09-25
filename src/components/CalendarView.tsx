@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { localDateKey, toDatetimeLocal } from "@/lib/app-helpers";
 import { getNameDay, getPublicHolidayName } from "@/lib/czech-calendar";
 import type {
@@ -506,6 +506,22 @@ export function CalendarView({ note }: { note: (s: string) => void }) {
               </label>
             </div>
             <footer>
+              {editingId && (
+                <button
+                  type="button"
+                  className="icon danger"
+                  aria-label="Smazat záznam"
+                  onClick={() => {
+                    const target = tasks.find((t) => t.id === editingId);
+                    if (target) {
+                      setOpen(false);
+                      deleteCalendarTask(target);
+                    }
+                  }}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
               <button type="button" className="secondary" onClick={() => { setOpen(false); resetForm(); }}>Zrušit</button>
               <button disabled={saving} type="submit" className="primary">{saving ? "Ukládám…" : editingId ? "Uložit změny" : "Uložit do kalendáře"}</button>
             </footer>

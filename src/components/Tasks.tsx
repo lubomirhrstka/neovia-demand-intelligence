@@ -641,11 +641,11 @@ export function Tasks({ note }: { note: (s: string) => void }) {
               {editing && (
                 <button
                   type="button"
-                  className="secondary danger-action"
+                  className="icon danger"
+                  aria-label="Smazat úkol"
                   onClick={() => deleteTask(editing)}
                 >
                   <Trash2 size={15} />
-                  Koš
                 </button>
               )}
               <button

@@ -2910,9 +2910,9 @@ function Demands({
                   type="button"
                   onClick={removeDemand}
                   title="Odstranit nerelevantní poptávku"
+                  aria-label="Odstranit nerelevantní poptávku"
                 >
                   <Trash2 size={17} />
-                  Koš
                 </button>
                 {selected.sourceUrl && (
                   <a
@@ -4588,10 +4588,11 @@ function Contacts({
               {form.id && (
                 <button
                   type="button"
-                  className="danger"
+                  className="icon danger"
+                  aria-label="Smazat kontakt"
                   onClick={() => setContactToDelete(activeDetail || (contacts.find((c) => c.id === form.id) ?? null))}
                 >
-                  Smazat kontakt
+                  <Trash2 size={15} />
                 </button>
               )}
               <button type="submit" className="primary">

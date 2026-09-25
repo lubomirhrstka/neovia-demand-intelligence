@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Plus } from "lucide-react";
+import { ArrowUpRight, Plus, Trash2 } from "lucide-react";
 import { goTo } from "@/lib/app-helpers";
 
 export function Pool({ note }: { note: (s: string) => void }) {
@@ -181,8 +181,8 @@ export function Pool({ note }: { note: (s: string) => void }) {
                 Zrušit
               </button>
               {editingId && (
-                <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
-                  Odstranit
+                <button type="button" className="icon danger" aria-label="Odstranit kapacitu" onClick={() => setConfirmingDelete(true)}>
+                  <Trash2 size={15} />
                 </button>
               )}
               <button className="primary">{editingId ? "Uložit změny" : "Uložit kapacitu"}</button>
