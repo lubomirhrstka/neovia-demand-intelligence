@@ -10,6 +10,8 @@ export const gmailScopes = [
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.modify",
+  // Trvalé smazání (vyprázdnění koše) vyžaduje plný přístup — gmail.modify na to nestačí.
+  "https://mail.google.com/",
 ];
 
 export function gmailConfig() {

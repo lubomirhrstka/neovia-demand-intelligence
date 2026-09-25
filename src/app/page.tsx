@@ -1550,7 +1550,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       note("Nejdřív označte e-maily ke smazání.");
       return;
     }
-    if (!window.confirm(`Smazat ${selectedIds.length} označených položek?`)) return;
+    const confirmMessage =
+      folder === "trash"
+        ? `Trvale a nevratně smazat ${selectedIds.length} označených položek z koše?`
+        : `Přesunout ${selectedIds.length} označených položek do koše?`;
+    if (!window.confirm(confirmMessage)) return;
     setBulkBusy(true);
     try {
       if (["review", "followups"].includes(folder)) {
@@ -1564,7 +1568,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       const response = await fetch("/api/email/gmail/messages", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedIds }),
+        body: JSON.stringify({ ids: selectedIds, folder }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "E-maily se nepodařilo smazat.");
