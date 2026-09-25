@@ -30,13 +30,17 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState<{ htmlLink?: string } | null>(null);
+  const [slotMinutes, setSlotMinutes] = useState<number | null>(null);
 
   useEffect(() => {
     setLoadingSlots(true);
     setSelectedSlot(null);
     fetch(`/api/public/booking/slots?date=${activeDay}`)
       .then((r) => r.json())
-      .then((data) => setSlots(data.slots || []))
+      .then((data) => {
+        setSlots(data.slots || []);
+        if (data.config?.slotMinutes) setSlotMinutes(data.config.slotMinutes);
+      })
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
   }, [activeDay]);
@@ -82,7 +86,9 @@ export default function BookingPage() {
       <div className="booking-card">
         <p className="booking-eyebrow">NEOVIA · REZERVACE HOVORU</p>
         <h1>Domluvme si čas na hovor</h1>
-        <p className="booking-subtitle">Vyberte den a volný 30minutový termín.</p>
+        <p className="booking-subtitle">
+          Vyberte den a volný {slotMinutes || 30}minutový termín.
+        </p>
         <div className="booking-days">
           {days.map((day) => (
             <button
