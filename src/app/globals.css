@@ -3344,8 +3344,7 @@ button.metric:hover {
   display: grid;
   grid-template-columns: 130px 1fr 28px;
   gap: 10px;
-  align-items: center;
-  padding: 13px 18px;
+  align-items: center;  padding: 13px 18px;
   border-bottom: 1px solid #edf1f0;
 }
 .rank span {
@@ -3384,6 +3383,13 @@ button.metric:hover {
 }
 .source-stat strong {
   color: #087c70;
+}
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.clickable-row:hover {
+  background: #f2f8f7;
 }
 .sales-radar {
   margin-bottom: 24px;

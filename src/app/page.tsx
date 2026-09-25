@@ -2332,6 +2332,16 @@ function Demands({
         if (!r.ok) throw new Error();
         const data = await r.json();
         setRows(data);
+        const requestedQuery = window.localStorage.getItem("neovia-search-query");
+        if (requestedQuery) {
+          window.localStorage.removeItem("neovia-search-query");
+          setQuery(requestedQuery);
+        }
+        const requestedSource = window.localStorage.getItem("neovia-search-source");
+        if (requestedSource) {
+          window.localStorage.removeItem("neovia-search-source");
+          setSourceFilters([requestedSource]);
+        }
         const requested = window.localStorage.getItem("neovia-open-demand");
         if (requested) {
           const item = data.find((x: ImportedDemand) => x.id === requested);

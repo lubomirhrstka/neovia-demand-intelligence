@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, TrendingUp, Users, Target, AlertCircle } from "lucide-react";
+import { goTo } from "@/lib/app-helpers";
 
 type ImportedDemand = {
   id: string;
@@ -38,6 +39,8 @@ export function Analytics() {
   const [opportunities, setOpportunities] = useState<DashboardOpportunity[]>([]);
   const [metrics, setMetrics] = useState<PipelineMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAllStages, setShowAllStages] = useState(true);
+  const [roleRangeMonth, setRoleRangeMonth] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -123,7 +126,10 @@ export function Analytics() {
   const maxMonth = Math.max(1, ...monthBuckets.map((x) => x.count));
 
   const roleCounts = Array.from(
-    demands
+    (roleRangeMonth
+      ? demands.filter((d) => d.importedAt && new Date(d.importedAt).getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000)
+      : demands
+    )
       .reduce((map, demand) => {
         const key = demand.role || demand.title || "Role neuvedena";
         map.set(key, (map.get(key) || 0) + 1);
@@ -135,6 +141,15 @@ export function Analytics() {
     .slice(0, 8);
 
   const maxRole = Math.max(1, ...roleCounts.map((x) => x[1]));
+
+  const searchDemands = (text: string) => {
+    window.localStorage.setItem("neovia-search-query", text);
+    goTo("Poptávky");
+  };
+  const filterDemandsBySource = (source: string) => {
+    window.localStorage.setItem("neovia-search-source", source);
+    goTo("Poptávky");
+  };
 
   const sourceCounts = Array.from(
     demands
@@ -220,7 +235,9 @@ export function Analytics() {
         <section className="panel wide">
           <div className="panel-header">
             <h2>Pipeline funnel (10 stages)</h2>
-            <button>Všechny fáze</button>
+            <button type="button" onClick={() => setShowAllStages((v) => !v)}>
+              {showAllStages ? "Jen aktivní fáze" : "Všechny fáze"}
+            </button>
           </div>
           {opportunities.length === 0 ? (
             <div className="empty-state">
@@ -228,11 +245,19 @@ export function Analytics() {
             </div>
           ) : (
             <div>
-              {stages.map((stage) => {
+              {stages
+                .filter((stage) => showAllStages || (stageCounts[stage] || 0) > 0)
+                .map((stage) => {
                 const count = stageCounts[stage] || 0;
                 const percentage = (count / Math.max(1, maxCount)) * 100;
                 return (
-                  <div className="rank" key={stage}>
+                  <div
+                    className="rank clickable-row"
+                    key={stage}
+                    onClick={() => goTo("Pipeline")}
+                    role="button"
+                    tabIndex={0}
+                  >
                     <span>{stage}</span>
                     <i>
                       <b style={{ width: `${Math.max(5, percentage)}%` }} />
@@ -248,7 +273,9 @@ export function Analytics() {
         <section className="panel">
           <div className="panel-header">
             <h2>Nejžádanější role</h2>
-            <button>Poslední měsíc</button>
+            <button type="button" onClick={() => setRoleRangeMonth((v) => !v)}>
+              {roleRangeMonth ? "Poslední měsíc" : "Vše"}
+            </button>
           </div>
           {roleCounts.length === 0 ? (
             <div className="empty-state">
@@ -256,7 +283,13 @@ export function Analytics() {
             </div>
           ) : (
             roleCounts.map(([role, count]) => (
-              <div className="rank" key={role}>
+              <div
+                className="rank clickable-row"
+                key={role}
+                onClick={() => searchDemands(role)}
+                role="button"
+                tabIndex={0}
+              >
                 <span>{role}</span>
                 <i>
                   <b style={{ width: `${(count / maxRole) * 100}%` }} />
@@ -270,7 +303,7 @@ export function Analytics() {
         <section className="panel">
           <div className="panel-header">
             <h2>Výkon zdrojů</h2>
-            <button>Aktuální data</button>
+            <button type="button" onClick={() => goTo("Zdroje")}>Otevřít zdroje</button>
           </div>
           {sourceCounts.length === 0 ? (
             <div className="empty-state">
@@ -278,7 +311,13 @@ export function Analytics() {
             </div>
           ) : (
             sourceCounts.map(([source, count]) => (
-              <div className="source-stat" key={source}>
+              <div
+                className="source-stat clickable-row"
+                key={source}
+                onClick={() => filterDemandsBySource(source)}
+                role="button"
+                tabIndex={0}
+              >
                 <b>{source}</b>
                 <span>{count} poptávek</span>
                 <strong>
@@ -294,7 +333,7 @@ export function Analytics() {
         <section className="panel wide">
           <div className="panel-header">
             <h2>Vývoj poptávky - 6 měsíců</h2>
-            <button>Zobrazit všechno</button>
+            <button type="button" onClick={() => goTo("Poptávky")}>Zobrazit všechno</button>
           </div>
           {demands.length === 0 ? (
             <div className="empty-state">
