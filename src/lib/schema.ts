@@ -243,6 +243,7 @@ export const bookingSettings = pgTable("booking_settings", {
   workdays: jsonb("workdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5]),
   timezone: varchar("timezone", { length: 64 }).notNull().default("Europe/Prague"),
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  confirmationMessage: text("confirmation_message"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

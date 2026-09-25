@@ -34,6 +34,7 @@ export async function GET() {
       workdays: row.workdays,
       timezone: row.timezone,
       bufferMinutes: row.bufferMinutes,
+      confirmationMessage: row.confirmationMessage,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Nepodařilo se načíst nastavení bookingu.";
@@ -77,6 +78,7 @@ export async function PUT(request: Request) {
     workdays,
     timezone: typeof body.timezone === "string" && body.timezone ? body.timezone : "Europe/Prague",
     bufferMinutes: Math.max(0, Math.min(120, bufferMinutes || 0)),
+    confirmationMessage: typeof body.confirmationMessage === "string" ? body.confirmationMessage.slice(0, 2000).trim() || null : null,
     updatedAt: new Date(),
   };
 

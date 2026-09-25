@@ -8,6 +8,7 @@ type BookingCfg = {
   workdayEndHour: number;
   workdays: number[];
   bufferMinutes: number;
+  confirmationMessage: string;
 };
 
 type Block = { id: string; startsAt: string; endsAt: string; reason: string | null };
@@ -29,6 +30,7 @@ export function BookingSettings({ note }: { note: (s: string) => void }) {
     workdayEndHour: 17,
     workdays: [1, 2, 3, 4, 5],
     bufferMinutes: 0,
+    confirmationMessage: "",
   });
   const [bookingBlocks, setBookingBlocks] = useState<Block[]>([]);
   const [blockFrom, setBlockFrom] = useState("");
@@ -47,6 +49,7 @@ export function BookingSettings({ note }: { note: (s: string) => void }) {
           workdayEndHour: data.workdayEndHour ?? 17,
           workdays: Array.isArray(data.workdays) ? data.workdays : [1, 2, 3, 4, 5],
           bufferMinutes: data.bufferMinutes ?? 0,
+          confirmationMessage: data.confirmationMessage || "",
         });
       })
       .catch(() => {});
@@ -193,6 +196,18 @@ export function BookingSettings({ note }: { note: (s: string) => void }) {
             value={bookingCfg.bufferMinutes}
             onChange={(e) => setBookingCfg((c) => ({ ...c, bufferMinutes: Number(e.target.value) }))}
           />
+        </label>
+        <label style={{ gridColumn: "1 / -1" }}>
+          Text zprávy klientovi po rezervaci
+          <textarea
+            rows={3}
+            value={bookingCfg.confirmationMessage}
+            onChange={(e) => setBookingCfg((c) => ({ ...c, confirmationMessage: e.target.value }))}
+            placeholder="Rezervace přes veřejný booking odkaz NEOVIA Demand Intelligence."
+          />
+          <small style={{ color: "#657d7f", fontSize: 11 }}>
+            Vloží se do popisu pozvánky, kterou klient dostane e-mailem z Google kalendáře. Necháte-li prázdné, použije se výchozí text.
+          </small>
         </label>
       </div>
       <div style={{ marginBottom: 12 }}>

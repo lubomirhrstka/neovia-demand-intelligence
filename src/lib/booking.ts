@@ -13,6 +13,7 @@ export type BookingConfig = {
   workdays: number[];
   timezone: string;
   bufferMinutes: number;
+  confirmationMessage: string | null;
 };
 
 export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
@@ -22,6 +23,7 @@ export const DEFAULT_BOOKING_CONFIG: BookingConfig = {
   workdays: [1, 2, 3, 4, 5],
   timezone: BOOKING_TIMEZONE,
   bufferMinutes: 0,
+  confirmationMessage: null,
 };
 
 /** Najde jediný v appce připojený Google kalendář (single-tenant appka) a obnoví token, pokud je potřeba. */
@@ -68,6 +70,7 @@ export async function getBookingConfig(ownerId?: string | null): Promise<Booking
       workdays: workdays.length ? workdays : DEFAULT_BOOKING_CONFIG.workdays,
       timezone: row.timezone || BOOKING_TIMEZONE,
       bufferMinutes: Math.max(0, Math.min(120, row.bufferMinutes ?? 0)),
+      confirmationMessage: row.confirmationMessage || null,
     };
   } catch {
     return { ...DEFAULT_BOOKING_CONFIG };

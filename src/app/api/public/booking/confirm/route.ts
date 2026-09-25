@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     const payload = {
       summary: `Hovor: ${guestName.trim()} × NEOVIA`,
       description: [
-        "Rezervace přes veřejný booking odkaz NEOVIA Demand Intelligence.",
+        config.confirmationMessage?.trim() || "Rezervace přes veřejný booking odkaz NEOVIA Demand Intelligence.",
         `Host: ${guestName.trim()} (${guestEmail.trim()})`,
         `Délka: ${config.slotMinutes} min`,
         note?.trim() ? `Poznámka: ${note.trim()}` : "",
