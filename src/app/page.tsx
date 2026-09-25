@@ -392,6 +392,7 @@ function AccountSettings({
     [mailSignature, setMailSignature] = useState(() => window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA"),
     [mailMode, setMailMode] = useState(() => window.localStorage.getItem("neovia-mail-mode") || "draft_review"),
     [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null),
+    [gmailStatus, setGmailStatus] = useState<CalendarStatus | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
@@ -399,7 +400,18 @@ function AccountSettings({
       .then((response) => (response.ok ? response.json() : null))
       .then(setCalendarStatus)
       .catch(() => setCalendarStatus(null));
+    fetch("/api/email/gmail/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setGmailStatus)
+      .catch(() => setGmailStatus(null));
   }, []);
+  const connectGmail = () => {
+    if (!gmailStatus?.oauthUrl) {
+      note(`Chybí OAuth údaje pro Gmail: ${(gmailStatus?.missing || ["GOOGLE_GMAIL_CLIENT_ID", "GOOGLE_GMAIL_CLIENT_SECRET"]).join(", ")}.`);
+      return;
+    }
+    window.open(gmailStatus.oauthUrl, "_blank", "noopener,noreferrer");
+  };
   const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -480,11 +492,25 @@ function AccountSettings({
           <p>
             Bezpečný režim je připravený: aplikace generuje koncept, uloží ho ke kontaktu jako komunikaci a otevře Gmail ke kontrole před odesláním.
           </p>
-          <div className="email-status-card">
-            <span className="source-tag">PŘIPRAVENO</span>
-            <b>Gmail OAuth zatím není připojený</b>
-            <small>Po doplnění Google Client ID, Client Secret a callback URL půjde zapnout čtení inboxu, Gmail drafts a odesílání přes API.</small>
+          <div className={gmailStatus?.connected ? "email-status-card connected" : "email-status-card"}>
+            <span className="source-tag">{gmailStatus?.connected ? "PŘIPOJENO" : gmailStatus?.configured ? "OAUTH PŘIPRAVEN" : "ČEKÁ NA OAUTH"}</span>
+            <b>{gmailStatus?.connected ? gmailStatus.account : "Gmail OAuth zatím není připojený"}</b>
+            <small>
+              {gmailStatus?.connected
+                ? `Poslední synchronizace: ${gmailStatus.lastSyncAt ? new Date(gmailStatus.lastSyncAt).toLocaleString("cs-CZ") : "zatím žádná"}`
+                : gmailStatus?.configured
+                  ? "Připraveno k připojení."
+                  : `Po doplnění Google Client ID, Client Secret a callback URL půjde zapnout čtení inboxu, Gmail drafts a odesílání přes API.`}
+            </small>
           </div>
+          <button className="secondary" type="button" style={{ marginBottom: 16 }} onClick={connectGmail}>
+            {gmailStatus?.connected ? "Znovu připojit Gmail" : "Připojit Gmail"}
+          </button>
+          {gmailStatus?.connected && (
+            <p style={{ fontSize: 11, color: "#657d7f", marginTop: -10, marginBottom: 16 }}>
+              Nedávno přibylo oprávnění pro trvalé mazání v koši — pokud mazání v Koši hlásí chybu, klikněte na „Znovu připojit Gmail" a v Google okně potvrďte nová oprávnění.
+            </p>
+          )}
           <div className="form-grid email-settings-grid">
             <label>
               Výchozí e-mailový účet
