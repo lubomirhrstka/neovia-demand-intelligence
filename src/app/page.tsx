@@ -281,7 +281,7 @@ export default function Home() {
   );
 }
 function AuthScreen() {
-  const [mode, setMode] = useState<"login" | "signup">("signup"),
+  const [mode] = useState<"login" | "signup">("login"),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -360,17 +360,6 @@ function AuthScreen() {
                 : "Přihlásit se"}
           </button>
         </form>
-        <button
-          className="auth-switch"
-          onClick={() => {
-            setMode(mode === "signup" ? "login" : "signup");
-            setMessage("");
-          }}
-        >
-          {mode === "signup"
-            ? "Už mám účet, přihlásit se"
-            : "Ještě nemám účet, vytvořit ho"}
-        </button>
       </section>
     </main>
   );
