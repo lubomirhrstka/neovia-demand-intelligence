@@ -72,7 +72,8 @@ export async function calendarFetch<T>(accessToken: string, path: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data.error?.message || "Google Calendar API volání selhalo.");
   return data as T;
 }
@@ -87,7 +88,8 @@ export async function calendarPost<T>(accessToken: string, path: string, body: u
     body: JSON.stringify(body),
     cache: "no-store",
   });
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data.error?.message || "Google Calendar API volání selhalo.");
   return data as T;
 }
@@ -102,7 +104,8 @@ export async function calendarPatch<T>(accessToken: string, path: string, body: 
     body: JSON.stringify(body),
     cache: "no-store",
   });
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(data.error?.message || "Google Calendar API volání selhalo.");
   return data as T;
 }

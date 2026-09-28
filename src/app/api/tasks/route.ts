@@ -5,7 +5,7 @@ import { aliasedTable } from "drizzle-orm/alias";
 import { and, desc, eq, or } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { calendarDelete, getFreshCalendarAccount } from "@/lib/google-calendar";
+import { calendarDelete, calendarPatch, getFreshCalendarAccount } from "@/lib/google-calendar";
 
 async function currentUser() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -176,6 +176,30 @@ export async function PATCH(request: Request) {
     .where(eq(tasks.id, current.id))
     .returning();
   await db.insert(auditLog).values({ entityType: "task", entityId: updated.id, action: "updated", before: current, after: updated, actorId: user.id });
+
+  // Pokud je úkol propojený s Google kalendářem, promítni změnu i tam (dřív se propisovalo jen při vzniku).
+  const isGoogleSynced = updated.externalProvider === "google_calendar" && Boolean(updated.externalId);
+  const relevantChange =
+    body.title !== undefined || body.dueAt !== undefined || body.note !== undefined || body.status !== undefined;
+  if (isGoogleSynced && relevantChange) {
+    try {
+      const account = await getFreshCalendarAccount(user.id);
+      if (account?.accessToken) {
+        const payload: Record<string, unknown> = { summary: updated.title };
+        if (updated.dueAt) {
+          const start = new Date(updated.dueAt);
+          const end = new Date(start.getTime() + 30 * 60 * 1000);
+          payload.start = { dateTime: start.toISOString() };
+          payload.end = { dateTime: end.toISOString() };
+        }
+        if (updated.note !== undefined) payload.description = updated.note || "";
+        if (updated.status === "done") payload.status = "cancelled";
+        await calendarPatch(account.accessToken, `/calendars/primary/events/${encodeURIComponent(updated.externalId!)}`, payload);
+      }
+    } catch {
+      // Google update je "best effort" — CRM zůstává zdrojem pravdy, i kdyby se propsání nepovedlo.
+    }
+  }
   if (updated.contactId || updated.companyId || updated.opportunityId) {
     await db.insert(activities).values({
       type: updated.kind || "task",
