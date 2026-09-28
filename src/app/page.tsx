@@ -700,7 +700,7 @@ function Dashboard({
   }, []);
   const visibleDemands = dashboardDemands.filter((d) => {
     const text = `${d.company || ""} ${d.role || ""} ${d.title || ""} ${(d.technologies || []).join(" ")}`.toLowerCase();
-    return (!focus || text.includes(focus.toLowerCase())) && (!onlyFocus || Number(d.relevanceScore || 0) >= 80);
+    return (!focus || text.includes(focus.toLowerCase())) && (!onlyFocus || demandIntelligence(d).score >= 80);
   });
   const newToday = dashboardDemands.filter((d) => {
     const imported = d.importedAt ? new Date(d.importedAt) : null;
@@ -1075,8 +1075,8 @@ function Dashboard({
                 </div>
                 <span className="source">{d.source}</span>
                 <span className="score">
-                  <i style={{ width: `${Number(d.relevanceScore || 0)}%` }} />
-                  {Number(d.relevanceScore || 0)}%
+                  <i style={{ width: `${demandIntelligence(d).score}%` }} />
+                  {demandIntelligence(d).score}%
                 </span>
                 <span className="quiet row-arrow" aria-hidden="true">
                   <MoreHorizontal size={18} />
@@ -2369,7 +2369,7 @@ function Demands({
     const text =
       `${d.company || ""} ${d.role || d.title} ${(d.technologies || []).join(" ")} ${d.demandText || ""}`.toLowerCase();
     const hasContact = Boolean(d.contactFirstName || d.contactLastName);
-    const score = Number(d.relevanceScore || 0);
+    const score = demandIntelligence(d).score;
     return (
       text.includes(query.toLowerCase()) &&
       (!sourceFilters.length || sourceFilters.includes(d.source)) &&
@@ -2727,7 +2727,7 @@ function Demands({
             {!roleFilters.length && <small>Všechny role</small>}
           </div>
           <label>
-            Min. relevance
+            Min. skóre
             <select value={minScore} onChange={(e) => setMinScore(e.target.value)}>
               <option value="0">Vše</option>
               <option value="50">50 % a více</option>
@@ -2821,7 +2821,7 @@ function Demands({
           </label>
           <span>Kontakt</span>
           <span>Stav</span>
-          <span>Relevance</span>
+          <span>Skóre</span>
         </div>
         {loading ? (
           <div className="empty-state">Načítám poptávky z databáze…</div>
@@ -2897,7 +2897,7 @@ function Demands({
               </div>
               <span className="status new">Nová</span>
               <strong className="big-score">
-                {d.relevanceScore || 0}
+                {demandIntelligence(d).score}
                 <small>%</small>
               </strong>
             </div>
