@@ -5113,6 +5113,8 @@ function Sources({ note }: { note: (s: string) => void }) {
   const [running, setRunning] = useState(false),
     [result, setResult] = useState(""),
     [monitorRunning, setMonitorRunning] = useState(false),
+    [linkedInRunning, setLinkedInRunning] = useState(false),
+    [linkedInResult, setLinkedInResult] = useState(""),
     [monitorResult, setMonitorResult] = useState(""),
     [history, setHistory] = useState<ImportRunRecord[]>([]),
     [manualOpen, setManualOpen] = useState(false),
@@ -5244,6 +5246,22 @@ function Sources({ note }: { note: (s: string) => void }) {
     );
     loadHistory();
     note("Ruční kontrola Job Monitoru byla dokončena.");
+  };
+  const runLinkedIn = async () => {
+    setLinkedInRunning(true);
+    setLinkedInResult("");
+    const response = await fetch("/api/imports/linkedin", { method: "POST" });
+    const data = await response.json();
+    setLinkedInRunning(false);
+    if (!response.ok) {
+      note(data.error || "LinkedIn import se nepodařilo spustit.");
+      return;
+    }
+    setLinkedInResult(
+      `Nalezeno ${data.found}, nově uloženo ${data.created}, přeskočeno ${data.skipped}.${data.warnings?.length ? ` Upozornění: ${data.warnings[0]}` : ""}`,
+    );
+    loadHistory();
+    note("Import LinkedIn alertů byl dokončen.");
   };
   const runManualImport = async () => {
     if (!manualText.trim()) {
@@ -5382,16 +5400,14 @@ function Sources({ note }: { note: (s: string) => void }) {
           )}
         </article>
         <article
-          className="source-card clickable-card"
-          onClick={() =>
-            note(
-              "Pro LinkedIn je nutný schválený Talent Solutions přístup.",
-            )
-          }
+          className="source-card active-source clickable-card"
+          onClick={() => {
+            if (!linkedInRunning) runLinkedIn();
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
+            if ((event.key === "Enter" || event.key === " ") && !linkedInRunning) {
               event.preventDefault();
-              note("Pro LinkedIn je nutný schválený Talent Solutions přístup.");
+              runLinkedIn();
             }
           }}
           role="button"
@@ -5399,27 +5415,25 @@ function Sources({ note }: { note: (s: string) => void }) {
         >
           <div>
             <span className="source-logo dark">in</span>
-            <b className="pending">ČEKÁ NA PŘÍSTUP</b>
+            <b>AKTIVNÍ</b>
           </div>
-          <h2>LinkedIn Talent Solutions</h2>
+          <h2>LinkedIn, e-mailové alerty</h2>
           <p>
-            Aktivace až po schváleném partnerském přístupu nebo napojení
-            licencovaného datového partnera.
+            Vytěží job alerty z připojené Gmail schránky (jobalerts-noreply@linkedin.com)
+            a uloží nové pozice jako poptávky se skóre podle nastavených klíčových slov.
           </p>
           <footer>
-            <span>OAuth a smluvní přístup</span>
-            <button
-              className="secondary"
-              onClick={(event) => {
-                event.stopPropagation();
-                note(
-                  "Pro LinkedIn je nutný schválený Talent Solutions přístup.",
-                );
-              }}
-            >
-              Zjistit podmínky
+            <span>Vyžaduje připojený Gmail</span>
+            <button className="primary" disabled={linkedInRunning} onClick={(event) => { event.stopPropagation(); runLinkedIn(); }}>
+              {linkedInRunning ? "Vytěžuji…" : "Spustit import"}
             </button>
           </footer>
+          {linkedInResult && (
+            <div className="source-result">
+              <Check size={15} />
+              {linkedInResult}
+            </div>
+          )}
         </article>
         <article
           className="source-card active-source clickable-card"
