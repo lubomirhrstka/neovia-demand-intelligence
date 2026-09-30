@@ -5499,7 +5499,7 @@ function Sources({ note }: { note: (s: string) => void }) {
       return;
     }
     setLinkedInResult(
-      `Nalezeno ${data.found}, nově uloženo ${data.created}, přeskočeno ${data.skipped}.${data.warnings?.length ? ` Upozornění: ${data.warnings[0]}` : ""}`,
+      `Nalezeno ${data.found}, nově uloženo ${data.created}, přeskočeno ${data.skipped}, web ověřen u ${data.webVerified || 0} firem.${data.warnings?.length ? ` Upozornění: ${data.warnings[0]}` : ""}`,
     );
     loadHistory();
     note("Import LinkedIn alertů byl dokončen.");

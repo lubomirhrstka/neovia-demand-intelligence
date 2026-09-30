@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { sameCompanyIdentity } from "@/lib/matching";
 import { getFreshGmailAccount, gmailFetch } from "@/lib/gmail";
 import { fetchLinkedInFromSeznam, getSeznamImapAccount } from "@/lib/seznam-imap";
+import { verifyCompanyWeb } from "@/lib/company-web-verify";
 import { companies, connectorSources, demands, importRuns, monitorSettings, emailAccounts } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -260,9 +261,10 @@ export async function POST(request: Request) {
   const [settings] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
   const keywords = settings?.keywords?.length ? settings.keywords : ["IT Security", "Cybersecurity", "Security Officer", "NIS2", "GDPR", "Incident Response", "SOC Manager"];
 
-  let found = 0, created = 0, updated = 0, skipped = 0;
+  let found = 0, created = 0, updated = 0, skipped = 0, webVerified = 0;
   const warnings: string[] = [];
   const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
+  const MAX_AUTO_VERIFY = 6; // rozpočet na import — ověření webu stojí několik requestů, nechceme import protáhnout na minuty
 
   const saveJob = async (job: ParsedJob) => {
     found += 1;
@@ -274,6 +276,7 @@ export async function POST(request: Request) {
     }
     const companyName = normalizeCompanyNameSafe(job.company);
     let companyRecord = allCompanies.find((c) => sameCompanyIdentity(c, { name: companyName }).same);
+    let isNewCompany = false;
     if (!companyRecord) {
       const [createdCompany] = await db.insert(companies).values({
         name: companyName,
@@ -282,6 +285,7 @@ export async function POST(request: Request) {
       }).returning();
       companyRecord = createdCompany;
       allCompanies.push(createdCompany);
+      isNewCompany = true;
     }
     await db.insert(demands).values({
       externalId,
@@ -296,6 +300,28 @@ export async function POST(request: Request) {
       ownerId: session.user.id,
     });
     created += 1;
+
+    // Automatické ověření firemního webu — jen pro nové, dosud neznámé firmy a jen do rozpočtu
+    // MAX_AUTO_VERIFY na jeden import (stejná logika jako ruční tlačítko "Ověřit web a kontakty").
+    if (isNewCompany && companyName !== "Firma neuvedena (LinkedIn)" && webVerified < MAX_AUTO_VERIFY) {
+      webVerified += 1;
+      try {
+        await verifyCompanyWeb({
+          ownerId: session.user.id,
+          companyId: companyRecord.id,
+          companyName,
+          companyWebsite: companyRecord.website,
+          companyNote: companyRecord.note,
+          demandTitle: job.title,
+          demandText: job.detail || null,
+          demandSourceUrl: job.url || null,
+          maxUrls: 6,
+          timeoutMs: 4000,
+        });
+      } catch {
+        // ověření je "best effort" — nikdy nesmí shodit import
+      }
+    }
   };
 
   if (account?.accessToken) {
@@ -358,7 +384,7 @@ export async function POST(request: Request) {
     errorSummary: warnings.length ? JSON.stringify({ warnings }) : null,
   }).where(eq(importRuns.id, run.id));
 
-  return NextResponse.json({ found, created, updated, skipped, warnings });
+  return NextResponse.json({ found, created, updated, skipped, webVerified, warnings });
 }
 
 export const GET = POST;

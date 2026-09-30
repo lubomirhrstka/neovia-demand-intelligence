@@ -1,149 +1,10 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { companies, contacts, demands } from "@/lib/schema";
-import { and, eq, or } from "drizzle-orm";
+import { verifyCompanyWeb } from "@/lib/company-web-verify";
+import { companies, demands } from "@/lib/schema";
+import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-
-const CAREER_PATHS = [
-  "/kariera",
-  "/kariéra",
-  "/career",
-  "/careers",
-  "/jobs",
-  "/volne-pozice",
-  "/volná-místa",
-  "/pracovni-pozice",
-  "/kontakt",
-  "/contact",
-];
-
-const FREE_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "seznam.cz",
-  "email.cz",
-  "post.cz",
-  "volny.cz",
-  "centrum.cz",
-  "atlas.cz",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "yahoo.com",
-  "icloud.com",
-  "me.com",
-  "proton.me",
-  "protonmail.com",
-]);
-
-const normalizeUrl = (value: string) => {
-  const clean = value.trim().replace(/[)"'<>.,;]+$/g, "");
-  if (!clean) return "";
-  return /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
-};
-
-const hostnameOf = (value: string) => {
-  try {
-    return new URL(normalizeUrl(value)).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return "";
-  }
-};
-
-const domainFromEmail = (value: string) => {
-  const domain = value.toLowerCase().split("@")[1]?.replace(/^www\./, "") || "";
-  return domain && !FREE_EMAIL_DOMAINS.has(domain) ? domain : "";
-};
-
-const extractUrls = (text: string) =>
-  [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)]
-    .map((match) => normalizeUrl(match[0]))
-    .filter(Boolean);
-
-const extractEmails = (text: string) =>
-  [...new Set([...text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0].toLowerCase()))]
-    .filter((email) => !/noreply|no-reply|example|sentry|linkedin|google|facebook/.test(email));
-
-const extractPhones = (text: string) =>
-  [...new Set([...text.matchAll(/(?:\+420|00420)?[\s.-]?(?:\d{3}[\s.-]?){3}/g)].map((match) => match[0].trim()))]
-    .filter((phone) => phone.replace(/\D/g, "").length >= 9);
-
-const stripHtml = (html: string) =>
-  html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
-
-async function fetchText(url: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6500);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "user-agent": "LeadHunter CRM contact verification (+https://leadhunter-lh.vercel.app)",
-        accept: "text/html,application/xhtml+xml",
-      },
-      redirect: "follow",
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html")) return null;
-    const html = await response.text();
-    return { url: response.url || url, html, text: stripHtml(html) };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-const companyNameToDomainCandidate = (name: string) => {
-  const base = name
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/\b(s\.?r\.?o\.?|a\.?s\.?|spol\.?|inc|ltd|gmbh)\b/g, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 40);
-  return base.length >= 3 ? `https://${base}.cz` : "";
-};
-
-const candidateRoots = (companyName: string, website?: string | null, demandText?: string | null, sourceUrl?: string | null) => {
-  const urls = [website || "", ...(demandText ? extractUrls(demandText) : []), sourceUrl || ""]
-    .map(normalizeUrl)
-    .filter(Boolean)
-    .filter((url) => {
-      const host = hostnameOf(url);
-      return host && !/linkedin\.com|google\.com|mail\.google\.com|seznam\.cz/.test(host);
-    });
-  const guessed = companyNameToDomainCandidate(companyName);
-  if (guessed) urls.push(guessed);
-  const uniqueHosts = new Map<string, string>();
-  for (const url of urls) {
-    const host = hostnameOf(url);
-    if (host && !uniqueHosts.has(host)) uniqueHosts.set(host, new URL(url).origin);
-  }
-  return [...uniqueHosts.values()].slice(0, 4);
-};
-
-const scoreCareerUrl = (url: string, text: string, title: string) => {
-  const haystack = `${url} ${text}`.toLowerCase();
-  let score = 0;
-  if (/kariera|kariéra|career|jobs|volne|volná|pracovni|pozice/.test(haystack)) score += 35;
-  for (const word of title.toLowerCase().split(/\s+/).filter((x) => x.length > 3)) {
-    if (haystack.includes(word)) score += 8;
-  }
-  return score;
-};
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -152,10 +13,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const db = getDb();
   const [row] = await db
-    .select({
-      demand: demands,
-      company: companies,
-    })
+    .select({ demand: demands, company: companies })
     .from(demands)
     .leftJoin(companies, eq(demands.companyId, companies.id))
     .where(and(eq(demands.id, id), eq(demands.ownerId, session.user.id)))
@@ -164,85 +22,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!row?.demand) return NextResponse.json({ error: "Poptávka nebyla nalezena." }, { status: 404 });
   if (!row.company) return NextResponse.json({ error: "Poptávka nemá navázanou firmu." }, { status: 409 });
 
-  const roots = candidateRoots(row.company.name, row.company.website, row.demand.demandText, row.demand.sourceUrl);
-  if (!roots.length) return NextResponse.json({ error: "Nemám z čeho odvodit firemní web." }, { status: 409 });
-
-  const checked: string[] = [];
-  const pages: Array<{ url: string; text: string; html: string; score: number }> = [];
-  for (const root of roots) {
-    const urls = [root, ...CAREER_PATHS.map((path) => new URL(path, root).toString())];
-    for (const url of urls) {
-      if (checked.includes(url) || checked.length >= 24) continue;
-      checked.push(url);
-      const page = await fetchText(url);
-      if (!page) continue;
-      pages.push({ ...page, score: scoreCareerUrl(page.url, page.text, row.demand.title) });
-    }
-  }
-
-  const bestRoot = pages[0]?.url ? new URL(pages[0].url).origin : roots[0];
-  const bestCareer = [...pages].sort((a, b) => b.score - a.score)[0];
-  const text = pages.map((page) => page.text).join("\n");
-  const emails = extractEmails(text);
-  const phones = extractPhones(text);
-  const companyDomain = hostnameOf(bestRoot);
-  const companyEmails = emails.filter((email) => domainFromEmail(email) === companyDomain || domainFromEmail(email).endsWith(`.${companyDomain}`));
-  const selectedEmails = (companyEmails.length ? companyEmails : emails).slice(0, 3);
-  const selectedPhones = phones.slice(0, 3);
-
-  const patch: { website?: string; note?: string; updatedAt: Date } = { updatedAt: new Date() };
-  if (!row.company.website && bestRoot) patch.website = bestRoot;
-  const careerNote = bestCareer?.score ? `Kariérní stránka ověřená z webu: ${bestCareer.url}` : "";
-  if (careerNote && !(row.company.note || "").includes(bestCareer.url)) {
-    patch.note = [row.company.note, careerNote].filter(Boolean).join("\n");
-  }
-  if (patch.website || patch.note) {
-    await db
-      .update(companies)
-      .set(patch)
-      .where(and(eq(companies.id, row.company.id), eq(companies.ownerId, session.user.id)));
-  }
-
-  let contactsCreated = 0;
-  for (let index = 0; index < Math.max(selectedEmails.length, selectedPhones.length); index += 1) {
-    const email = selectedEmails[index] || null;
-    const phone = selectedPhones[index] || null;
-    if (!email && !phone) continue;
-    const duplicateRule = email && phone
-      ? or(eq(contacts.email, email), eq(contacts.secondaryEmail, email), eq(contacts.phone, phone), eq(contacts.secondaryPhone, phone))
-      : email
-        ? or(eq(contacts.email, email), eq(contacts.secondaryEmail, email))
-        : or(eq(contacts.phone, phone!), eq(contacts.secondaryPhone, phone!));
-    const existing = await db
-      .select({ id: contacts.id })
-      .from(contacts)
-      .where(and(
-        eq(contacts.ownerId, session.user.id),
-        duplicateRule!,
-      ))
-      .limit(1);
-    if (existing.length) continue;
-    await db.insert(contacts).values({
-      firstName: "Kontakt",
-      lastName: row.company.name,
-      role: "Kontakt z firemního webu",
-      email,
-      phone,
-      source: "Firemní web",
-      verified: true,
-      companyId: row.company.id,
-      ownerId: session.user.id,
-    });
-    contactsCreated += 1;
-  }
-
-  return NextResponse.json({
-    ok: true,
-    checked: checked.length,
-    website: patch.website || row.company.website || bestRoot,
-    careerUrl: bestCareer?.score ? bestCareer.url : null,
-    emails: selectedEmails,
-    phones: selectedPhones,
-    contactsCreated,
+  const result = await verifyCompanyWeb({
+    ownerId: session.user.id,
+    companyId: row.company.id,
+    companyName: row.company.name,
+    companyWebsite: row.company.website,
+    companyNote: row.company.note,
+    demandTitle: row.demand.title,
+    demandText: row.demand.demandText,
+    demandSourceUrl: row.demand.sourceUrl,
   });
+  if (!result) return NextResponse.json({ error: "Nemám z čeho odvodit firemní web." }, { status: 409 });
+
+  return NextResponse.json({ ok: true, ...result });
 }
