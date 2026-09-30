@@ -2,7 +2,8 @@ import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { sameCompanyIdentity } from "@/lib/matching";
 import { getFreshGmailAccount, gmailFetch } from "@/lib/gmail";
-import { companies, connectorSources, demands, importRuns, monitorSettings } from "@/lib/schema";
+import { fetchLinkedInFromSeznam, getSeznamImapAccount } from "@/lib/seznam-imap";
+import { companies, connectorSources, demands, importRuns, monitorSettings, emailAccounts } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
@@ -183,12 +184,12 @@ function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""
   return jobs;
 }
 
-async function listLinkedInCandidateMessages(accessToken: string) {
+async function listLinkedInCandidateMessages(accessToken: string, sinceDays = 30) {
   const queries = [
-    "from:jobalerts-noreply@linkedin.com newer_than:30d",
-    "\"jobalerts-noreply@linkedin.com\" newer_than:30d",
-    "\"Příležitost na pozici\" \"LinkedIn\" newer_than:30d",
-    "\"pracovní příležitosti LinkedIn\" newer_than:30d",
+    `from:jobalerts-noreply@linkedin.com newer_than:${sinceDays}d`,
+    `"jobalerts-noreply@linkedin.com" newer_than:${sinceDays}d`,
+    `"Příležitost na pozici" "LinkedIn" newer_than:${sinceDays}d`,
+    `"pracovní příležitosti LinkedIn" newer_than:${sinceDays}d`,
   ];
   const unique = new Map<string, { id: string }>();
   for (const query of queries) {
@@ -207,13 +208,16 @@ const relevanceFor = (text: string, keywords: string[]) => {
   return Math.min(100, Math.max(20, matches * 15));
 };
 
-export async function POST() {
+export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
   const db = getDb();
+  const body = await request.json().catch(() => ({}));
+  const sinceDays = Math.min(365, Math.max(1, Number(body.sinceDays) || 30));
   const account = await getFreshGmailAccount(session.user.id);
-  if (!account?.accessToken) {
-    return NextResponse.json({ error: "Gmail není připojený. Připojte ho v Nastavení." }, { status: 409 });
+  const seznamAccount = await getSeznamImapAccount(session.user.id);
+  if (!account?.accessToken && !seznamAccount) {
+    return NextResponse.json({ error: "Není připojený žádný e-mail (Gmail ani seznam.cz). Připojte alespoň jeden v Nastavení." }, { status: 409 });
   }
 
   const [existingSource] = await db.select().from(connectorSources).where(eq(connectorSources.key, "linkedin")).limit(1);
@@ -240,69 +244,91 @@ export async function POST() {
 
   let found = 0, created = 0, updated = 0, skipped = 0;
   const warnings: string[] = [];
+  const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
 
-  try {
-    const messages = await listLinkedInCandidateMessages(account.accessToken);
-    const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
-
-    for (const item of messages) {
-      const message = await gmailFetch<GmailMessage>(account.accessToken, `/messages/${item.id}?format=full`);
-      const subject = getHeader(message, "Subject");
-      const html = htmlFromPart(message.payload);
-      const text = textFromPart(message.payload) || message.snippet || "";
-      if (!html && !text && !subject) continue;
-      const jobs = [
-        ...parseLinkedInJobs(html),
-        ...parseLinkedInJobsFromText(`${subject}\n${text}`, message.id, subject),
-      ].filter((job, index, all) =>
-        all.findIndex((candidate) =>
-          candidate.externalId === job.externalId ||
-          (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
-        ) === index,
-      );
-      found += jobs.length;
-
-      for (const job of jobs) {
-        const externalId = `linkedin:${job.externalId}`;
-        const [existingDemand] = await db.select({ id: demands.id }).from(demands).where(and(eq(demands.ownerId, session.user.id), eq(demands.externalId, externalId))).limit(1);
-        if (existingDemand) {
-          skipped += 1;
-          continue;
-        }
-
-        const companyName = normalizeCompanyNameSafe(job.company);
-        let companyRecord = allCompanies.find((c) => sameCompanyIdentity(c, { name: companyName }).same);
-        if (!companyRecord) {
-          const [createdCompany] = await db.insert(companies).values({
-            name: companyName,
-            source: "LinkedIn",
-            ownerId: session.user.id,
-          }).returning();
-          companyRecord = createdCompany;
-          allCompanies.push(createdCompany);
-        }
-
-        await db.insert(demands).values({
-          externalId,
-          title: job.title,
-          source: "LinkedIn",
-          sourceUrl: job.url || null,
-          role: job.title,
-          location: job.location || null,
-          demandText: job.detail || `${job.title} — ${companyName}${job.location ? ` · ${job.location}` : ""}`,
-          relevanceScore: relevanceFor(`${job.title} ${job.location} ${job.detail || ""}`, keywords),
-          companyId: companyRecord.id,
-          ownerId: session.user.id,
-        });
-        created += 1;
-      }
+  const saveJob = async (job: ParsedJob) => {
+    found += 1;
+    const externalId = `linkedin:${job.externalId}`;
+    const [existingDemand] = await db.select({ id: demands.id }).from(demands).where(and(eq(demands.ownerId, session.user.id), eq(demands.externalId, externalId))).limit(1);
+    if (existingDemand) {
+      skipped += 1;
+      return;
     }
-    if (!messages.length) warnings.push("V Gmailu nebyly nalezeny LinkedIn alerty ani přeposlané zprávy za posledních 30 dní.");
-    if (messages.length && !found) warnings.push("LinkedIn e-maily byly nalezeny, ale nepodařilo se z nich vytěžit žádnou pozici.");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "LinkedIn import selhal.";
-    warnings.push(message);
+    const companyName = normalizeCompanyNameSafe(job.company);
+    let companyRecord = allCompanies.find((c) => sameCompanyIdentity(c, { name: companyName }).same);
+    if (!companyRecord) {
+      const [createdCompany] = await db.insert(companies).values({
+        name: companyName,
+        source: "LinkedIn",
+        ownerId: session.user.id,
+      }).returning();
+      companyRecord = createdCompany;
+      allCompanies.push(createdCompany);
+    }
+    await db.insert(demands).values({
+      externalId,
+      title: job.title,
+      source: "LinkedIn",
+      sourceUrl: job.url || null,
+      role: job.title,
+      location: job.location || null,
+      demandText: job.detail || `${job.title} — ${companyName}${job.location ? ` · ${job.location}` : ""}`,
+      relevanceScore: relevanceFor(`${job.title} ${job.location} ${job.detail || ""}`, keywords),
+      companyId: companyRecord.id,
+      ownerId: session.user.id,
+    });
+    created += 1;
+  };
+
+  if (account?.accessToken) {
+    try {
+      const messages = await listLinkedInCandidateMessages(account.accessToken, sinceDays);
+      for (const item of messages) {
+        const message = await gmailFetch<GmailMessage>(account.accessToken, `/messages/${item.id}?format=full`);
+        const subject = getHeader(message, "Subject");
+        const html = htmlFromPart(message.payload);
+        const text = textFromPart(message.payload) || message.snippet || "";
+        if (!html && !text && !subject) continue;
+        const jobs = [
+          ...parseLinkedInJobs(html),
+          ...parseLinkedInJobsFromText(`${subject}\n${text}`, message.id, subject),
+        ].filter((job, index, all) =>
+          all.findIndex((candidate) =>
+            candidate.externalId === job.externalId ||
+            (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
+          ) === index,
+        );
+        for (const job of jobs) await saveJob(job);
+      }
+      if (!messages.length) warnings.push(`V Gmailu nebyly nalezeny LinkedIn alerty ani přeposlané zprávy za posledních ${sinceDays} dní.`);
+    } catch (error) {
+      warnings.push(`Gmail: ${error instanceof Error ? error.message : "LinkedIn import selhal."}`);
+    }
   }
+
+  if (seznamAccount?.accessToken) {
+    try {
+      const seznamMessages = await fetchLinkedInFromSeznam(seznamAccount.email, seznamAccount.accessToken, sinceDays);
+      for (const message of seznamMessages) {
+        const jobs = [
+          ...parseLinkedInJobs(message.html),
+          ...parseLinkedInJobsFromText(`${message.subject}\n${message.text}`, `seznam:${message.subject}:${message.text.slice(0, 40)}`, message.subject),
+        ].filter((job, index, all) =>
+          all.findIndex((candidate) =>
+            candidate.externalId === job.externalId ||
+            (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
+          ) === index,
+        );
+        for (const job of jobs) await saveJob(job);
+      }
+      await db.update(emailAccounts).set({ lastSyncAt: new Date() }).where(eq(emailAccounts.id, seznamAccount.id));
+      if (!seznamMessages.length) warnings.push(`Na seznam.cz nebyly nalezeny LinkedIn alerty za posledních ${sinceDays} dní.`);
+    } catch (error) {
+      warnings.push(`seznam.cz: ${error instanceof Error ? error.message : "IMAP import selhal."}`);
+    }
+  }
+
+  if (found === 0 && !warnings.length) warnings.push("LinkedIn e-maily byly nalezeny, ale nepodařilo se z nich vytěžit žádnou pozici.");
 
   await db.update(importRuns).set({
     status: warnings.length ? "completed_with_warnings" : "completed",

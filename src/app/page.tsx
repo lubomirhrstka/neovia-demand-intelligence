@@ -591,6 +591,7 @@ function AccountSettings({
             Uložit e-mailové nastavení
           </button>
         </section>
+        <SeznamImapSettings note={note} />
         <section className="panel setting-card">
           <h2>Google kalendář</h2>
           <p>
@@ -5257,6 +5258,9 @@ function Sources({ note }: { note: (s: string) => void }) {
     [result, setResult] = useState(""),
     [monitorRunning, setMonitorRunning] = useState(false),
     [linkedInRunning, setLinkedInRunning] = useState(false),
+    [linkedInSinceDays, setLinkedInSinceDays] = useState(() =>
+      typeof window !== "undefined" ? window.localStorage.getItem("neovia-linkedin-since-days") || "30" : "30",
+    ),
     [linkedInResult, setLinkedInResult] = useState(""),
     [monitorResult, setMonitorResult] = useState(""),
     [history, setHistory] = useState<ImportRunRecord[]>([]),
@@ -5393,7 +5397,12 @@ function Sources({ note }: { note: (s: string) => void }) {
   const runLinkedIn = async () => {
     setLinkedInRunning(true);
     setLinkedInResult("");
-    const response = await fetch("/api/imports/linkedin", { method: "POST" });
+    const sinceDays = Number(linkedInSinceDays || "30");
+    const response = await fetch("/api/imports/linkedin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sinceDays }),
+    });
     const data = await response.json();
     setLinkedInRunning(false);
     if (!response.ok) {
@@ -5562,11 +5571,28 @@ function Sources({ note }: { note: (s: string) => void }) {
           </div>
           <h2>LinkedIn, e-mailové alerty</h2>
           <p>
-            Vytěží job alerty z připojené Gmail schránky (jobalerts-noreply@linkedin.com)
-            a uloží nové pozice jako poptávky se skóre podle nastavených klíčových slov.
+            Vytěží job alerty z připojené Gmail schránky i seznam.cz (IMAP), uloží nové pozice
+            jako poptávky se skóre podle nastavených klíčových slov.
           </p>
+          <label
+            className="since-days-field"
+            onClick={(event) => event.stopPropagation()}
+          >
+            Kolik dní zpětně procházet
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={linkedInSinceDays}
+              onChange={(event) => {
+                setLinkedInSinceDays(event.target.value);
+                window.localStorage.setItem("neovia-linkedin-since-days", event.target.value);
+              }}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </label>
           <footer>
-            <span>Vyžaduje připojený Gmail</span>
+            <span>Gmail + seznam.cz</span>
             <button className="primary" disabled={linkedInRunning} onClick={(event) => { event.stopPropagation(); runLinkedIn(); }}>
               {linkedInRunning ? "Vytěžuji…" : "Spustit import"}
             </button>
@@ -6173,6 +6199,88 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
               </button>
             </footer>
           </div>
+        </div>
+      )}
+    </section>
+  );
+}
+function SeznamImapSettings({ note }: { note: (s: string) => void }) {
+  const [status, setStatus] = useState<{ connected: boolean; email: string | null; lastSyncAt: string | null } | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => {
+    fetch("/api/email/seznam/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const connect = async () => {
+    if (!email.trim() || !password.trim()) {
+      note("Zadejte e-mail i heslo.");
+      return;
+    }
+    setBusy(true);
+    const response = await fetch("/api/email/seznam/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password }),
+    });
+    const data = await response.json();
+    setBusy(false);
+    if (!response.ok) {
+      note(data.error || "Připojení se nezdařilo.");
+      return;
+    }
+    setPassword("");
+    note("seznam.cz e-mail byl připojen.");
+    load();
+  };
+  const disconnect = async () => {
+    setBusy(true);
+    await fetch("/api/email/seznam/connect", { method: "DELETE" });
+    setBusy(false);
+    note("seznam.cz e-mail byl odpojen.");
+    load();
+  };
+  return (
+    <section className="panel setting-card">
+      <h2>seznam.cz e-mail (IMAP)</h2>
+      <p>
+        Pro vytěžování LinkedIn job alertů, které chodí na seznam.cz. Doporučujeme v nastavení seznam.cz
+        vytvořit samostatné aplikační heslo místo hlavního hesla k účtu.
+      </p>
+      <div className={status?.connected ? "email-status-card connected" : "email-status-card"}>
+        <span className="source-tag">{status?.connected ? "PŘIPOJENO" : "PŘIPRAVENO"}</span>
+        <b>{status?.connected ? status.email : "seznam.cz zatím není připojen"}</b>
+        <small>
+          {status?.connected
+            ? status.lastSyncAt
+              ? `Poslední čtení: ${new Date(status.lastSyncAt).toLocaleString("cs-CZ")}`
+              : "Zatím nebylo čteno."
+            : "Zadejte e-mail a aplikační heslo pro připojení přes IMAP."}
+        </small>
+      </div>
+      {status?.connected ? (
+        <button className="secondary" disabled={busy} onClick={disconnect}>
+          Odpojit seznam.cz
+        </button>
+      ) : (
+        <div className="form-grid">
+          <label>
+            E-mail
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hrstka@seznam.cz" />
+          </label>
+          <label>
+            Heslo (aplikační)
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          <button className="primary" disabled={busy} onClick={connect} style={{ gridColumn: "1 / -1" }}>
+            {busy ? "Připojuji…" : "Připojit seznam.cz"}
+          </button>
         </div>
       )}
     </section>

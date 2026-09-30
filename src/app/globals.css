@@ -857,8 +857,7 @@
   color: #9a6b16;
   background: #fff2d6;
 }
-.source-card h2 {
-  font-size: 15px;
+.source-card h2 {  font-size: 15px;
   margin: 0;
 }
 .source-card p {
@@ -867,6 +866,23 @@
   color: #627a7c;
   margin: 0;
   min-height: 68px;
+}
+.since-days-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: 700 10px Manrope;
+  color: #536f70;
+  margin: 10px 0;
+}
+.since-days-field input {
+  width: 56px;
+  border: 1px solid #dbe9e7;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: 700 12px "DM Mono";
+  text-align: center;
 }
 .source-card footer {
   border-top: 1px solid #edf1f0;
