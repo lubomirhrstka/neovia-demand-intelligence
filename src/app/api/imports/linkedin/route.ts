@@ -96,8 +96,11 @@ function parseLinkedInJobs(html: string): ParsedJob[] {
     // typický vzor: "Název pozice Firma · Lokalita (Typ)"
     const afterTitle = chunk.slice(current.title.length).trim();
     const dotSplit = afterTitle.split("·");
-    const company = (dotSplit[0] || "").trim().slice(0, 180) || "Firma neuvedena";
-    const location = (dotSplit[1] || "").split(/\s{2,}|Snadná žádost|spojení/)[0].trim().slice(0, 180);
+    const company = sanitizeCompany((dotSplit[0] || "").trim().slice(0, 180)) || "Firma neuvedena";
+    const location = sanitizeLocation((dotSplit[1] || "").split(/\s{2,}|Snadná žádost|spojení/)[0].trim().slice(0, 180));
+    // pokud firma vyšla jako URL fragment, celý záznam je nespolehlivý — raději ho přeskočit
+    // než uložit poptávku s nesmyslnými daty (uživatel to nemůže rozumně ověřit).
+    if (looksLikeUrlJunk(dotSplit[0] || "")) continue;
     jobs.push({
       externalId: current.id,
       title: current.title,
@@ -116,6 +119,20 @@ const cleanLinkedInTitle = (value: string) =>
     .replace(/^příležitost na pozici\s+/i, "")
     .replace(/^upozornění na nové pracovní příležitosti?\s*/i, "")
     .trim();
+
+/** Ochrana proti rozbitému parsování: rozpozná, když se místo firmy/lokality omylem
+ *  vytáhl fragment trackovací URL (typicky "view/123.../?trackingId=..." apod.). */
+const looksLikeUrlJunk = (value: string) => {
+  if (!value) return true;
+  const v = value.trim();
+  if (!v) return true;
+  if (/^https?:|trackingid=|refid=|%2[a-f0-9]|\/(view|jobs|comm)\//i.test(v)) return true;
+  // dlouhý řetězec bez mezer s lomítky/otazníkem vypadá jako URL fragment, ne jako název firmy
+  if (v.length > 30 && !v.includes(" ") && /[/?=&]/.test(v)) return true;
+  return false;
+};
+const sanitizeCompany = (value: string) => (looksLikeUrlJunk(value) ? "" : value);
+const sanitizeLocation = (value: string) => (looksLikeUrlJunk(value) ? "" : value);
 
 const stableTextId = (messageId: string, title: string, company: string, index: number) =>
   `${messageId}:${index}:${Buffer.from(`${title}|${company}`.toLowerCase()).toString("base64url").slice(0, 48)}`;
@@ -139,6 +156,7 @@ function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""
       .replace(/[.,;:]+$/g, "")
       .trim();
     if (!title || title.length < 3 || !company || company.length < 2) return;
+    if (looksLikeUrlJunk(company)) return;
     const key = `${title.toLowerCase()}|${company.toLowerCase()}|${locationRaw.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
