@@ -251,7 +251,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
     const calendar = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//NEOVIA//Demand Intelligence//CS",
+      "PRODID:-//LeadHunter//Demand Intelligence//CS",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       events,
@@ -261,7 +261,7 @@ export function Tasks({ note }: { note: (s: string) => void }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `neovia-ukoly-${todayKey}.ics`;
+    link.download = `leadhunter-ukoly-${todayKey}.ics`;
     document.body.appendChild(link);
     link.click();
     link.remove();

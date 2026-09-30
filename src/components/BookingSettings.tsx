@@ -203,7 +203,7 @@ export function BookingSettings({ note }: { note: (s: string) => void }) {
             rows={3}
             value={bookingCfg.confirmationMessage}
             onChange={(e) => setBookingCfg((c) => ({ ...c, confirmationMessage: e.target.value }))}
-            placeholder="Rezervace přes veřejný booking odkaz NEOVIA Demand Intelligence."
+            placeholder="Rezervace přes veřejný booking odkaz LeadHunter."
           />
           <small style={{ color: "#657d7f", fontSize: 11 }}>
             Vloží se do popisu pozvánky, kterou klient dostane e-mailem z Google kalendáře. Necháte-li prázdné, použije se výchozí text.

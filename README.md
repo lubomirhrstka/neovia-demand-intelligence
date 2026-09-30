@@ -1,4 +1,4 @@
-# NEOVIA Demand Intelligence
+# LeadHunter
 
 ## CI/CD Configuration
 ✅ Vercel secrets configured: VERCEL_ORG_ID and VERCEL_PROJECT_ID

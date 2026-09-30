@@ -84,7 +84,7 @@ export default function BookingPage() {
   return (
     <main className="booking-page">
       <div className="booking-card">
-        <p className="booking-eyebrow">NEOVIA · REZERVACE HOVORU</p>
+        <p className="booking-eyebrow">LUBOMÍR HRSTKA · REZERVACE HOVORU</p>
         <h1>Domluvme si čas na hovor</h1>
         <p className="booking-subtitle">
           Vyberte den a volný {slotMinutes || 30}minutový termín.

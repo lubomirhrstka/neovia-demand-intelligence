@@ -285,7 +285,7 @@ async function fetchDemandDetail(url: string | null): Promise<{ text: string | n
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; NEOVIA Demand Intelligence/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; LeadHunter/1.0)",
         Accept: "text/html,application/xhtml+xml",
       },
       cache: "no-store",
@@ -422,7 +422,7 @@ export async function POST() {
     let html = "";
     try {
       const response = await fetch(source.url, {
-        headers: { "User-Agent": "NEOVIA Demand Intelligence/1.0" },
+        headers: { "User-Agent": "LeadHunter/1.0" },
         cache: "no-store",
       });
       if (!response.ok) {
@@ -488,7 +488,7 @@ export async function POST() {
       if ((!companyName || companyName === "Neznámá firma") && detailUrl) {
         try {
           const detailResponse = await fetch(detailUrl, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; NEOVIA Demand Intelligence/1.0)" },
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; LeadHunter/1.0)" },
             cache: "no-store",
           });
           if (detailResponse.ok) {

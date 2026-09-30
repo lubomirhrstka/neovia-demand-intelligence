@@ -117,7 +117,7 @@ export function downloadCsv(rows: string[], filename: string) {
   const filterRange = `R3C1:R${dataRowCount + 2}C${columnCount}`;
   const generatedAt = new Date().toLocaleString("cs-CZ");
   const tableRows = [
-    `<tr class="export-title"><td colspan="${columnCount}">NEOVIA export, ${escapeHtml(generatedAt)}</td></tr>`,
+    `<tr class="export-title"><td colspan="${columnCount}">LeadHunter export, ${escapeHtml(generatedAt)}</td></tr>`,
     `<tr class="export-filter"><td colspan="${columnCount}">Filtr a hledání: v Excelu použij šipky v hlavičce tabulky nebo zkratku Ctrl+F. AutoFilter je připravený pro celý rozsah dat.</td></tr>`,
     ...parsedRows.map((row, rowIndex) => {
       const tag = rowIndex === 0 ? "th" : "td";

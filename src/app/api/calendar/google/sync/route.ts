@@ -34,7 +34,7 @@ function taskPayload(task: typeof tasks.$inferSelect) {
   return {
     summary: task.title,
     description: [
-      "NEOVIA Demand Intelligence",
+      "LeadHunter",
       `Typ: ${task.kind === "meeting" ? "schůzka" : task.kind === "note" ? "poznámka" : "úkol"}`,
       task.tag ? `Štítek: ${task.tag}` : "",
       `Priorita: ${task.priority}`,

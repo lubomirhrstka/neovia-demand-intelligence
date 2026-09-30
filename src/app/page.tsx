@@ -136,7 +136,7 @@ export default function Home() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <div className="brand-mark">N</div>
+          <div className="brand-mark">LH</div>
           <p>Ověřuji přístup k pracovnímu prostoru.</p>
         </div>
       </main>
@@ -146,9 +146,9 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div>N</div>
-          <span>NEOVIA</span>
-          <small>INTELLIGENCE</small>
+          <div>LH</div>
+          <span>LEADHUNTER</span>
+          <small>DEMAND INTELLIGENCE</small>
         </div>
         <div className="workspace">
           <span className="avatar blue">L</span>
@@ -182,7 +182,7 @@ export default function Home() {
             <i></i> Data se načítají z pracovního prostoru
           </small>
           <small className="app-version">
-            v{APP_VERSION} · {APP_RELEASE_DATE} · NEOVIA Demand Intelligence
+            v{APP_VERSION} · {APP_RELEASE_DATE} · LeadHunter
           </small>
         </div>
       </aside>
@@ -305,9 +305,9 @@ function AuthScreen() {
     <main className="auth-page">
       <section className="auth-card">
         <div className="auth-logo">
-          <span>N</span>
-          <b>NEOVIA</b>
-          <small>INTELLIGENCE</small>
+          <span>LH</span>
+          <b>LEADHUNTER</b>
+          <small>DEMAND INTELLIGENCE</small>
         </div>
         <p className="eyebrow">ZABEZPEČENÝ PRACOVNÍ PROSTOR</p>
         <h1>
@@ -315,7 +315,7 @@ function AuthScreen() {
         </h1>
         <p className="auth-subtitle">
           {mode === "signup"
-            ? "Váš účet bude uložen v zabezpečené databázi NEOVIA."
+            ? "Váš účet bude uložen v zabezpečené databázi LeadHunter."
             : "Pokračujte do svého obchodního pracovního prostoru."}
         </p>
         <form onSubmit={submit}>
@@ -364,6 +364,63 @@ function AuthScreen() {
     </main>
   );
 }
+const THEMES = [
+  {
+    id: "default",
+    label: "Aktuální barvy",
+    desc: "Světlé téma – mentolová a petrolejová.",
+    swatch: ["#eff7f4", "#ffffff", "#08796d", "#183334"],
+  },
+  {
+    id: "gamrot",
+    label: "Gamrot – tmavé",
+    desc: "Černá, grafit a oranžový akcent (inspirace danielgamrot.cz).",
+    swatch: ["#000000", "#0a0a0a", "#f06a15", "#ffffff"],
+  },
+] as const;
+function ThemeSettings({ note }: { note: (s: string) => void }) {
+  const [theme, setTheme] = useState<string>(() => {
+    try {
+      return window.localStorage.getItem("leadhunter-theme") || "default";
+    } catch {
+      return "default";
+    }
+  });
+  const apply = (id: string) => {
+    setTheme(id);
+    try {
+      window.localStorage.setItem("leadhunter-theme", id);
+    } catch {}
+    if (id === "default") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = id;
+    note(`Zobrazení změněno: ${THEMES.find((t) => t.id === id)?.label}.`);
+  };
+  return (
+    <section className="panel setting-card theme-settings">
+      <h2>Zobrazení</h2>
+      <p>Vyberte barevné téma aplikace. Volba se uloží v tomto prohlížeči.</p>
+      <div className="theme-options">
+        {THEMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={theme === t.id ? "theme-option active" : "theme-option"}
+            onClick={() => apply(t.id)}
+            aria-pressed={theme === t.id}
+          >
+            <span className="theme-swatch">
+              {t.swatch.map((c) => (
+                <i key={c} style={{ background: c }} />
+              ))}
+            </span>
+            <b>{t.label}</b>
+            <small>{t.desc}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 function AccountSettings({
   name,
   email,
@@ -378,7 +435,7 @@ function AccountSettings({
     [again, setAgain] = useState(""),
     [mailAccount, setMailAccount] = useState(() => window.localStorage.getItem("neovia-mail-account") || email),
     [mailSenderName, setMailSenderName] = useState(() => window.localStorage.getItem("neovia-mail-sender") || name),
-    [mailSignature, setMailSignature] = useState(() => window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA"),
+    [mailSignature, setMailSignature] = useState(() => window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka"),
     [mailMode, setMailMode] = useState(() => window.localStorage.getItem("neovia-mail-mode") || "draft_review"),
     [calendarStatus, setCalendarStatus] = useState<CalendarStatus | null>(null),
     [gmailStatus, setGmailStatus] = useState<CalendarStatus | null>(null),
@@ -476,6 +533,7 @@ function AccountSettings({
           </div>
           <p>První založený účet je správce pracovního prostoru.</p>
         </section>
+        <ThemeSettings note={note} />
         <section className="panel setting-card">
           <h2>Firemní Gmail a e-mailový klient</h2>
           <p>
@@ -2154,7 +2212,7 @@ const demandDuplicates = (d: ImportedDemand, rows: ImportedDemand[]) =>
 const outreachDraft = (d: ImportedDemand) => {
   const role = d.role || d.title;
   const company = d.company || "vaší společnosti";
-  return `Dobrý den,\n\nzaznamenal jsem, že ${company} řeší pozici ${role}. V NEOVIA se zaměřujeme na IT outsourcing a dodávku ověřených specialistů, včetně oblastí kybernetické bezpečnosti, NIS2, ISMS a IT delivery.\n\nRád bych krátce ověřil, jestli má smysl probrat možnost rychlého doplnění kapacity nebo bodyshop spolupráce.\n\nMůžeme si zavolat na 10 minut?`;
+  return `Dobrý den,\n\nzaznamenal jsem, že ${company} řeší pozici ${role}. Zaměřuji se na IT outsourcing a dodávku ověřených specialistů, včetně oblastí kybernetické bezpečnosti, NIS2, ISMS a IT delivery.\n\nRád bych krátce ověřil, jestli má smysl probrat možnost rychlého doplnění kapacity nebo bodyshop spolupráce.\n\nMůžeme si zavolat na 10 minut?`;
 };
 type LocalEmailDraft = {
   id?: string;
@@ -2169,7 +2227,7 @@ type LocalEmailDraft = {
   demandId?: string | null;
 };
 const draftWithSignature = (body: string) => {
-  const signature = (window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka\nNEOVIA").trim();
+  const signature = (window.localStorage.getItem("neovia-mail-signature") || "Lubomír Hrstka").trim();
   return signature ? `${body.trim()}\n\n--\n${signature}` : body.trim();
 };
 const saveLocalEmailDraft = (draft: LocalEmailDraft) => {
@@ -2183,7 +2241,7 @@ const saveLocalEmailDraft = (draft: LocalEmailDraft) => {
 };
 const contactOutreachDraft = (contact: Contact, companyDemands: ImportedDemand[] = []) => {
   const role = companyDemands[0]?.role || companyDemands[0]?.title || contact.role || "IT kapacity";
-  return `Dobrý den,\n\nnavazuji na aktuální potřeby kolem role ${role} ve společnosti ${contact.company}. V NEOVIA pomáháme firmám rychle doplňovat ověřené IT specialisty formou outsourcingu, bodyshopu nebo cílené podpory týmu.\n\nRád bych krátce ověřil, jestli má smysl probrat možnosti spolupráce a dostupné kapacity.\n\nMůžeme si zavolat na 10 minut?`;
+  return `Dobrý den,\n\nnavazuji na aktuální potřeby kolem role ${role} ve společnosti ${contact.company}. Pomáhám firmám rychle doplňovat ověřené IT specialisty formou outsourcingu, bodyshopu nebo cílené podpory týmu.\n\nRád bych krátce ověřil, jestli má smysl probrat možnosti spolupráce a dostupné kapacity.\n\nMůžeme si zavolat na 10 minut?`;
 };
 const contactLinkRegex =
   /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+420|00420)?[\s.-]?(?:\d{3}[\s.-]?){3})/gi;

@@ -4,6 +4,6 @@
     { "path": "/api/imports/job-monitor", "schedule": "0 13 * * 2,4" }
   ],
   "env": {
-    "NEXT_PUBLIC_BETTER_AUTH_URL": "https://neovia-demand-intelligence-o2488nyra-luboss.vercel.app"
+    "NEXT_PUBLIC_BETTER_AUTH_URL": "https://leadhunter-lh.vercel.app"
   }
 }

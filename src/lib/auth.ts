@@ -19,5 +19,8 @@ export const auth = betterAuth({
   trustHost: true,
   trustedOrigins: isDev ? undefined : [
     new URL(baseUrl).origin,
+    "https://leadhunter-lh.vercel.app",
+    // původní doména – ponechána kvůli přechodu, lze později odstranit
+    "https://neovia-demand-intelligence.vercel.app",
   ],
 });

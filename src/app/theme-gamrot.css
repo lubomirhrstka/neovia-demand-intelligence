@@ -1,0 +1,426 @@
+/* AUTOMATICKY GENEROVÁNO scripts/generate-theme-gamrot.py – neupravovat ručně */
+/* Téma „Gamrot" – inspirováno danielgamrot.cz (černá, grafit, oranžový akcent #f06a15) */
+:root[data-theme="gamrot"]{color-scheme:dark;--accent:#f06a15;--accent-btn:#c05510;--accent-hover:#d45500}
+:root[data-theme="gamrot"] body{background:#000;color:#fff}
+:root[data-theme="gamrot"] input,:root[data-theme="gamrot"] select,:root[data-theme="gamrot"] textarea{background:#0a0a0a;color:#fff;border-color:#1f1f1f}
+:root[data-theme="gamrot"] input::placeholder,:root[data-theme="gamrot"] textarea::placeholder{color:#808080}
+:root[data-theme="gamrot"] ::selection{background:#f06a1555}
+:root[data-theme="gamrot"] button.primary:hover{background:#d45500}
+:root[data-theme="gamrot"] .auth-page{background:linear-gradient(135deg, #111312, #1d2020)}
+:root[data-theme="gamrot"] .monitor-settings>p{color:#c4cacb}
+:root[data-theme="gamrot"] .schedule-row{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .schedule-row input:last-child{border:1px solid #292e2d}
+:root[data-theme="gamrot"] .auth-card{background:#0a0a0a;border:1px solid #222726;box-shadow:0 24px 70px #00000020}
+:root[data-theme="gamrot"] .auth-logo span, :root[data-theme="gamrot"] .brand-mark{background:#f06a15;color:#f0f2f2}
+:root[data-theme="gamrot"] .auth-logo small{color:#b0b9b9}
+:root[data-theme="gamrot"] .eyebrow{color:#f06a15}
+:root[data-theme="gamrot"] .auth-subtitle{color:#c3caca}
+:root[data-theme="gamrot"] .auth-card label{color:#e2e5e6}
+:root[data-theme="gamrot"] .auth-card input{border:1px solid #292f2e}
+:root[data-theme="gamrot"] .auth-card input:focus{border-color:#c05510;box-shadow:0 0 0 3px #f06a1516}
+:root[data-theme="gamrot"] .auth-switch{color:#f06a15}
+:root[data-theme="gamrot"] .auth-error{background:#1c0704;color:#e0bfbb;border:1px solid #321713}
+:root[data-theme="gamrot"] .auth-page .auth-card > p:last-child{color:#cad0d0}
+:root[data-theme="gamrot"] .empty-state{color:#b7bfbf}
+:root[data-theme="gamrot"] .inline-cta{color:#f06a15}
+:root[data-theme="gamrot"] .setting-card > p{color:#c4cacb}
+:root[data-theme="gamrot"] .account-line small{color:#b6bebf}
+:root[data-theme="gamrot"] .password-form label{color:#d9dddd}
+:root[data-theme="gamrot"] .password-form input{border:1px solid #292f2e}
+:root[data-theme="gamrot"] .password-form input:focus{border-color:#c05510;box-shadow:0 0 0 3px #f06a1516}
+:root[data-theme="gamrot"] .danger-card{border-color:#2c1d19}
+:root[data-theme="gamrot"] .notifications-panel{background:#0a0a0a;box-shadow:0 18px 45px rgba(0, 0, 0, 0.16)}
+:root[data-theme="gamrot"] .notifications-panel header{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .notifications-panel header span{color:#f06a15;background:#161818}
+:root[data-theme="gamrot"] .notification-row{border-bottom:1px solid #1f2322;background:#0a0a0a;color:#f0f2f2}
+:root[data-theme="gamrot"] .notification-row:hover, :root[data-theme="gamrot"] .notification-row:focus-visible{background:#0e100f}
+:root[data-theme="gamrot"] .notification-row small{color:#c7cdcd}
+:root[data-theme="gamrot"] .notification-row span{color:#f06a15;background:#161818}
+:root[data-theme="gamrot"] .notification-row span.warning{color:#faf0dd;background:#2b1f06}
+:root[data-theme="gamrot"] .filter-panel{background:#0a0a0a}
+:root[data-theme="gamrot"] .filter-panel label{color:#d0d5d5}
+:root[data-theme="gamrot"] .multi-filter{color:#d0d5d5}
+:root[data-theme="gamrot"] .multi-filter div{border:1px solid #292e2d;background:#0a0a0a}
+:root[data-theme="gamrot"] .multi-filter button{border:1px solid #222625;background:#0e100f;color:#dee2e2}
+:root[data-theme="gamrot"] .multi-filter button.active{border-color:#c05510;background:#181c1b;color:#f06a15}
+:root[data-theme="gamrot"] .multi-filter small{color:#a5aeaf}
+:root[data-theme="gamrot"] .filter-panel select{border:1px solid #292e2d;background:#0a0a0a}
+:root[data-theme="gamrot"] .filter-panel small{color:#b6bebf}
+:root[data-theme="gamrot"] .detail-meta{background:#0e1010}
+:root[data-theme="gamrot"] .detail-meta span{color:#dfe2e3}
+:root[data-theme="gamrot"] .detail-meta b{color:#a5afaf}
+:root[data-theme="gamrot"] .contact-action-link, :root[data-theme="gamrot"] .muted-contact{color:#f06a15}
+:root[data-theme="gamrot"] .contact-action-link{border-bottom:1px solid rgba(192, 85, 16, 0.28)}
+:root[data-theme="gamrot"] .contact-action-link:hover, :root[data-theme="gamrot"] .contact-action-link:focus-visible{color:#eff1f1;border-bottom-color:#eff1f1}
+:root[data-theme="gamrot"] .muted-contact{color:#a3adad}
+:root[data-theme="gamrot"] .quick-contact-actions{background:#0e1010}
+:root[data-theme="gamrot"] .quick-contact-actions .contact-action-link, :root[data-theme="gamrot"] .quick-contact-actions .muted-contact, :root[data-theme="gamrot"] .quick-contact-actions .entity-link{border:1px solid #242928;background:#0a0a0a}
+:root[data-theme="gamrot"] .entity-link{color:#f06a15}
+:root[data-theme="gamrot"] .entity-link:disabled{color:#aeb6b7}
+:root[data-theme="gamrot"] .detail-text p{color:#e9ecec}
+:root[data-theme="gamrot"] .detail-text mark{background:#3c3109;color:#f7f0e2}
+:root[data-theme="gamrot"] .inline-contact-link{color:#f06a15}
+:root[data-theme="gamrot"] .demand-action-strip{border:1px solid #242928;background:#101211}
+:root[data-theme="gamrot"] .demand-action-strip span{color:#dee2e2}
+:root[data-theme="gamrot"] .demand-action-strip b{color:#f0f1f2}
+:root[data-theme="gamrot"] .demand-action-strip button{background:#c05510;color:#fff}
+:root[data-theme="gamrot"] .keyword-pool{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .keyword-pool span{background:#121514;color:#d8dcdc}
+:root[data-theme="gamrot"] .keyword-pool .role-tag{background:#181c1b;color:#f06a15}
+:root[data-theme="gamrot"] .detail-ok{background:#151816;color:#f06a15}
+:root[data-theme="gamrot"] .detail-missing{background:#291e06;color:#f1e4ce}
+:root[data-theme="gamrot"] .demand-detail footer{background:#0f1010}
+:root[data-theme="gamrot"] .company-detail-scroll{background:linear-gradient(180deg, #0e0f0f 0, #0a0a0a 210px)}
+:root[data-theme="gamrot"] .company-detail-scroll .crm-summary div{background:#0a0a0a;box-shadow:0 10px 26px rgba(0, 0, 0, 0.06)}
+:root[data-theme="gamrot"] .company-detail-scroll .quick-contact-actions .contact-action-link, :root[data-theme="gamrot"] .company-detail-scroll .quick-contact-actions .muted-contact, :root[data-theme="gamrot"] .company-detail-scroll .quick-contact-actions .entity-link{box-shadow:0 7px 16px rgba(0, 0, 0, 0.05)}
+:root[data-theme="gamrot"] .company-detail-scroll .company-intel-card{border:1px solid #1f2322;background:#0a0a0a;box-shadow:0 12px 28px rgba(0, 0, 0, 0.06)}
+:root[data-theme="gamrot"] .company-detail-scroll .form-grid{border:1px solid #1f2322;background:#0a0a0a;box-shadow:0 12px 28px rgba(0, 0, 0, 0.05)}
+:root[data-theme="gamrot"] .company-detail-scroll .crm-list{border:1px solid #1f2322;background:#0a0a0a;box-shadow:0 12px 28px rgba(0, 0, 0, 0.05)}
+:root[data-theme="gamrot"] .company-detail-scroll .crm-list h3{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .source-tag{border:1px solid #242928;background:#111313;color:#f06a15}
+:root[data-theme="gamrot"] .crm-summary{background:#0e1010}
+:root[data-theme="gamrot"] .crm-summary div{border:1px solid #1f2322;background:#0a0a0a}
+:root[data-theme="gamrot"] .crm-summary small{color:#b8bfc0}
+:root[data-theme="gamrot"] .crm-list button{border:1px solid #1f2322;background:#0a0a0a}
+:root[data-theme="gamrot"] .crm-list button:hover{border-color:#373e3d;box-shadow:0 4px 12px #0000000d}
+:root[data-theme="gamrot"] .crm-list small{color:#b8bfc0}
+:root[data-theme="gamrot"] .activity-note-link{background:#141616;color:#f06a15}
+:root[data-theme="gamrot"] .activity-note-link:hover, :root[data-theme="gamrot"] .activity-note-link:focus-visible{background:#1c201f}
+:root[data-theme="gamrot"] .source-card{background:#0a0a0a}
+:root[data-theme="gamrot"] .source-logo{background:#161918;color:#f06a15}
+:root[data-theme="gamrot"] .source-logo.dark{background:#131515;color:#ffffff}
+:root[data-theme="gamrot"] .source-logo.orange{background:#2c1f06;color:#f1e1c7}
+:root[data-theme="gamrot"] .source-card > div > b{color:#f06a15;background:#161918}
+:root[data-theme="gamrot"] .source-card > div > b.pending{color:#f1e5ce;background:#2b2006}
+:root[data-theme="gamrot"] .source-card p{color:#c7cdce}
+:root[data-theme="gamrot"] .source-card footer{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .source-card footer span{color:#b7bfbf}
+:root[data-theme="gamrot"] .source-result{color:#f06a15;background:#131514}
+:root[data-theme="gamrot"] .import-help{border:1px solid #1f2322;background:#0e1010}
+:root[data-theme="gamrot"] .file-import-box{color:#d6dada}
+:root[data-theme="gamrot"] .file-import-box input{border:1px dashed #3b4241;background:#0d0f0f;color:#dee2e2}
+:root[data-theme="gamrot"] .file-import-box small{color:#b6bebf}
+:root[data-theme="gamrot"] .mapping-panel{border:1px solid #1f2322;background:#0b0d0c}
+:root[data-theme="gamrot"] .mapping-grid label{color:#d6dada}
+:root[data-theme="gamrot"] .mapping-grid select{border:1px solid #292e2d;background:#0a0a0a}
+:root[data-theme="gamrot"] .mapping-preview{border:1px solid #1f2322;background:#0a0a0a}
+:root[data-theme="gamrot"] .mapping-preview div:first-child{background:#111313}
+:root[data-theme="gamrot"] .mapping-preview span{border-right:1px solid #1f2322;border-bottom:1px solid #1f2322;color:#dee2e2}
+:root[data-theme="gamrot"] .import-help small{color:#c9cfcf}
+:root[data-theme="gamrot"] .import-textarea{color:#d6dada}
+:root[data-theme="gamrot"] .import-textarea textarea{border:1px solid #292e2d}
+:root[data-theme="gamrot"] .import-textarea textarea:focus{border-color:#c05510;box-shadow:0 0 0 3px #f06a1518}
+:root[data-theme="gamrot"] .import-summary article{border:1px solid #1f2322;background:#0b0d0d}
+:root[data-theme="gamrot"] .import-summary article.warn{border-color:#4c3e17;background:#201905}
+:root[data-theme="gamrot"] .import-summary small{color:#b6bebf}
+:root[data-theme="gamrot"] .import-run{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .import-run small{color:#b8bfc0}
+:root[data-theme="gamrot"] .import-run p{color:#f7f0e1;background:#251d05;border:1px solid #4c3e17}
+:root[data-theme="gamrot"] .import-warnings{color:#f7f0e1;background:#251d05;border:1px solid #4c3e17}
+:root[data-theme="gamrot"] .import-status{background:#121514;color:#f06a15}
+:root[data-theme="gamrot"] .import-status.completed_with_warnings{background:#2c2006;color:#f2e6d0}
+:root[data-theme="gamrot"] .import-status.failed{background:#1c0704;color:#e0bfbb}
+:root[data-theme="gamrot"] .import-status.running, :root[data-theme="gamrot"] .import-status.queued{background:#09111c;color:#c7d4e5}
+:root[data-theme="gamrot"] .modal-backdrop{background:#0d0e0e80}
+:root[data-theme="gamrot"] .modal{background:#0a0a0a;box-shadow:0 20px 60px #00000055}
+:root[data-theme="gamrot"] .delete-choice > p{color:#e9ebeb}
+:root[data-theme="gamrot"] .delete-choice-options button small{color:#c1c7c8}
+:root[data-theme="gamrot"] .modal header p{color:#f06a15}
+:root[data-theme="gamrot"] .modal header button{color:#bfc6c7}
+:root[data-theme="gamrot"] .modal header .danger-icon-button{border:1px solid #341313;background:#180303;color:#e8c3c3}
+:root[data-theme="gamrot"] .modal header .danger-icon-button:hover{background:#1f0404}
+:root[data-theme="gamrot"] .danger-secondary{border:1px solid #341313;background:#180303;color:#e8c3c3}
+:root[data-theme="gamrot"] .danger-secondary:hover{background:#1f0404}
+:root[data-theme="gamrot"] .form-grid label{color:#d6dada}
+:root[data-theme="gamrot"] .form-grid input, :root[data-theme="gamrot"] .form-grid select, :root[data-theme="gamrot"] .form-grid textarea{border:1px solid #292e2d;background:#0a0a0a}
+:root[data-theme="gamrot"] .form-grid input:focus, :root[data-theme="gamrot"] .form-grid select:focus, :root[data-theme="gamrot"] .form-grid textarea:focus{border-color:#c05510;box-shadow:0 0 0 3px #f06a1518}
+:root[data-theme="gamrot"] .duplicate-check{border:1px solid #775f21;background:#251c05;color:#f5f0e2}
+:root[data-theme="gamrot"] .modal footer{background:#0f1010}
+:root[data-theme="gamrot"] .secondary{border:1px solid #292f2e;background:#0a0a0a;color:#e0e3e3}
+:root[data-theme="gamrot"]{--ink:#f1f3f3;--muted:#cacfd0;--line:#1f2322;--paper:#0f1110;--teal:#c05510;--mint:#181b1a;--yellow:#daa744}
+:root[data-theme="gamrot"] .sidebar{background:#0d0e0e;color:#e9ebeb}
+:root[data-theme="gamrot"] .brand > div{background:#f06a15;color:#0b0c0c}
+:root[data-theme="gamrot"] .brand small{color:#919b9b}
+:root[data-theme="gamrot"] .workspace{border:1px solid #1a1d1d}
+:root[data-theme="gamrot"] .workspace small, :root[data-theme="gamrot"] .bottom small{color:#9ea6a7}
+:root[data-theme="gamrot"] .blue{background:#f06a15;color:#fff}
+:root[data-theme="gamrot"] .ink{background:#111213;color:#eceeee}
+:root[data-theme="gamrot"] .soft{background:#202424;color:#ebeded}
+:root[data-theme="gamrot"] .color{background:#79601d;color:#f5f0e4}
+:root[data-theme="gamrot"] .nav{color:#bbc1c1}
+:root[data-theme="gamrot"] .nav:hover, :root[data-theme="gamrot"] .nav.active{background:#181a1a;color:#ffffff}
+:root[data-theme="gamrot"] .nav.active{box-shadow:inset 3px 0 #f06a15}
+:root[data-theme="gamrot"] .nav i{background:#f06a15;color:#0f1010}
+:root[data-theme="gamrot"] .bottom{border-top:1px solid #1a1d1d}
+:root[data-theme="gamrot"] .bottom small i{background:#f06a15}
+:root[data-theme="gamrot"] .content > header{background:#0a0a0a;color:#acb5b6}
+:root[data-theme="gamrot"] .content > header b{color:#414949}
+:root[data-theme="gamrot"] .content > header strong{color:#ebeded}
+:root[data-theme="gamrot"] .icon{color:#ced3d4}
+:root[data-theme="gamrot"] .icon em{background:#cb4430;border:1px solid #0a0a0a}
+:root[data-theme="gamrot"] .title p{color:#f06a15}
+:root[data-theme="gamrot"] .global-search{background:#0a0a0a;color:#cad0d0}
+:root[data-theme="gamrot"] .global-results > button{border-top:1px solid #1f2322;background:#0a0a0a}
+:root[data-theme="gamrot"] .global-results > button:hover{background:#0e100f}
+:root[data-theme="gamrot"] .global-results small{color:#b6bebf}
+:root[data-theme="gamrot"] .primary{background:#c05510;color:#fff;box-shadow:0 3px 8px #f06a1530}
+:root[data-theme="gamrot"] .primary:hover{background:#c05510}
+:root[data-theme="gamrot"] button.danger{background:#1c0707;color:#e9bab8}
+:root[data-theme="gamrot"] button.danger:hover{background:#2d0e0c}
+:root[data-theme="gamrot"] .delete-choice .merge-hint b{color:#e9bab8}
+:root[data-theme="gamrot"] .focus{background:#161818;border:1px solid #232726}
+:root[data-theme="gamrot"] .focus-icon, :root[data-theme="gamrot"] .metric-icon{background:#262b2a;color:#f06a15}
+:root[data-theme="gamrot"] .focus-copy > span{color:#f06a15}
+:root[data-theme="gamrot"] .focus-copy small, :root[data-theme="gamrot"] .focus-metric small{color:#cdd3d2}
+:root[data-theme="gamrot"] .focus-metric{border-left:1px solid #313735}
+:root[data-theme="gamrot"] .filter{border:1px solid #414947;background:#0e100f;color:#f06a15}
+:root[data-theme="gamrot"] .filter.on{background:#c05510;color:#fff}
+:root[data-theme="gamrot"] .metric{background:#0a0a0a}
+:root[data-theme="gamrot"] button.metric:hover{border-color:#373e3d;box-shadow:0 6px 16px #00000010}
+:root[data-theme="gamrot"] .metric-icon{background:#121514;color:#f06a15}
+:root[data-theme="gamrot"] .metric-icon.warn{background:#291e06;color:#e7cda1}
+:root[data-theme="gamrot"] .positive{color:#f06a15}
+:root[data-theme="gamrot"] .warning{color:#eddaba}
+:root[data-theme="gamrot"] .panel{background:#0a0a0a}
+:root[data-theme="gamrot"] .panel-header{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .panel-header button{color:#ccd1d2}
+:root[data-theme="gamrot"] .table-label{color:#9ea8a9}
+:root[data-theme="gamrot"] .demand-row{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .interactive-row{background:#0a0a0a}
+:root[data-theme="gamrot"] .interactive-row:hover, :root[data-theme="gamrot"] .interactive-row:focus-visible, :root[data-theme="gamrot"] .list-row:hover, :root[data-theme="gamrot"] .list-row:focus-visible, :root[data-theme="gamrot"] .contact-row:hover, :root[data-theme="gamrot"] .contact-row:focus-visible, :root[data-theme="gamrot"] .mini-task:hover, :root[data-theme="gamrot"] .mini-task:focus-visible, :root[data-theme="gamrot"] .duplicate-group-card:hover, :root[data-theme="gamrot"] .duplicate-group-card:focus-visible{background:#0d0f0e;box-shadow:inset 3px 0 0 #f06a15}
+:root[data-theme="gamrot"] .clickable-card:focus-visible, :root[data-theme="gamrot"] .pool article:focus-visible, :root[data-theme="gamrot"] .task:focus-visible, :root[data-theme="gamrot"] .source-card:focus-visible, :root[data-theme="gamrot"] .calendar-item:focus-visible{outline:3px solid #c0551026}
+:root[data-theme="gamrot"] .company{border:1px solid #222625;background:#0f1111;color:#f06a15}
+:root[data-theme="gamrot"] .demand-row small, :root[data-theme="gamrot"] .mini-task small{color:#b7bfbf}
+:root[data-theme="gamrot"] .source{color:#d0d5d5}
+:root[data-theme="gamrot"] .score i{background:#f06a15}
+:root[data-theme="gamrot"] .quiet{color:#adb6b6}
+:root[data-theme="gamrot"] .datebar{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .datebar small{color:#adb6b6}
+:root[data-theme="gamrot"] .datebar .today{background:#181c1b;color:#f06a15}
+:root[data-theme="gamrot"] .mini-task{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .mini-task > button, :root[data-theme="gamrot"] .task > button{border:1.5px solid #47514f;background:#0a0a0a}
+:root[data-theme="gamrot"] .dashboard-alert{border:1px solid #826322;background:#201805;color:#f5eee2}
+:root[data-theme="gamrot"] .dashboard-alert button{color:#f06a15}
+:root[data-theme="gamrot"] .axis{color:#879494}
+:root[data-theme="gamrot"] .bars{border-bottom:1px solid #292f2e;background:repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 35px,
+    #131615 36px
+  )}
+:root[data-theme="gamrot"] .bars i{background:#c05510}
+:root[data-theme="gamrot"] .bars small{color:#b2babb}
+:root[data-theme="gamrot"] .legend{color:#6f7a7b}
+:root[data-theme="gamrot"] .legend i{background:#c05510}
+:root[data-theme="gamrot"] .legend span:nth-child(2) i{background:#1b1e1e}
+:root[data-theme="gamrot"] .legend b{color:#f06a15}
+:root[data-theme="gamrot"] .donut{background:conic-gradient(#c05510 0 86%, #181b1a 86%)}
+:root[data-theme="gamrot"] .donut:after{background:#0a0a0a}
+:root[data-theme="gamrot"] .quality small{color:#b8bfc0}
+:root[data-theme="gamrot"] .quality button{color:#f06a15}
+:root[data-theme="gamrot"] .toolbar label{background:#0a0a0a;color:#c0c7c7}
+:root[data-theme="gamrot"] .toolbar select{background:#0a0a0a;color:#e2e5e5}
+:root[data-theme="gamrot"] .toolbar kbd{color:#a8b2b2}
+:root[data-theme="gamrot"] .search-clear{background:#0e100f;color:#d2d7d7}
+:root[data-theme="gamrot"] .search-clear:hover{background:#141616;color:#f06a15}
+:root[data-theme="gamrot"] .toolbar > button{background:#0a0a0a;color:#e2e5e5}
+:root[data-theme="gamrot"] .bulk-actions{border-color:#303635;background:#0f1111}
+:root[data-theme="gamrot"] .bulk-actions div{color:#dee2e2}
+:root[data-theme="gamrot"] .bulk-actions b{color:#f06a15}
+:root[data-theme="gamrot"] .bulk-actions button{background:#0a0a0a;color:#e2e5e5}
+:root[data-theme="gamrot"] .bulk-actions button:not(.danger-secondary):hover{border-color:#373e3d;color:#f06a15}
+:root[data-theme="gamrot"] .list-head{color:#a1abac}
+:root[data-theme="gamrot"] .list-row{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .demand-cell > input, :root[data-theme="gamrot"] .select-all input{accent-color:#c05510}
+:root[data-theme="gamrot"] .demand-title-link:hover, :root[data-theme="gamrot"] .demand-title-link:focus-visible{color:#f06a15}
+:root[data-theme="gamrot"] .list-row small{color:#b8bfc0}
+:root[data-theme="gamrot"] .list-row p span, :root[data-theme="gamrot"] .pool article section span{background:#121514;color:#d8dcdc}
+:root[data-theme="gamrot"] .status{color:#eee4cd;background:#2b2106}
+:root[data-theme="gamrot"] .status.new{color:#f06a15;background:#161918}
+:root[data-theme="gamrot"] .big-score{color:#f06a15}
+:root[data-theme="gamrot"] .big-score small{color:#cdd2d2}
+:root[data-theme="gamrot"] .notice{background:#251c05;border:1px solid #4a3d16;color:#f5efe2}
+:root[data-theme="gamrot"] .notice button{background:#0a0a0a;color:#f5efe3}
+:root[data-theme="gamrot"] .crm-tabs button{border:1px solid #212525;background:#0a0a0a;color:#d2d6d7}
+:root[data-theme="gamrot"] .crm-tabs button.active{background:#c05510;color:#fff;border-color:#c05510}
+:root[data-theme="gamrot"] .company-card-meta span, :root[data-theme="gamrot"] .company-card-meta a{border:1px solid #1f2322;background:#0e100f;color:#dde1e1}
+:root[data-theme="gamrot"] .company-card-meta a{color:#f06a15;background:#141716}
+:root[data-theme="gamrot"] .company-card-meta a:hover, :root[data-theme="gamrot"] .company-card-meta a:focus-visible{border-color:#c05510;background:#181c1b}
+:root[data-theme="gamrot"] .duplicate-groups-panel .panel-header p{color:#bec5c5}
+:root[data-theme="gamrot"] .duplicate-group-card{border:1px solid #1f2323;background:#0d0f0e}
+:root[data-theme="gamrot"] .duplicate-group-card small{color:#bec5c5}
+:root[data-theme="gamrot"] .crm-kpis button{background:#0a0a0a}
+:root[data-theme="gamrot"] .crm-kpis button:hover, :root[data-theme="gamrot"] .crm-kpis button:focus-visible{border-color:#c05510;box-shadow:0 10px 24px rgba(240, 106, 21, 0.12)}
+:root[data-theme="gamrot"] .crm-kpis small{color:#b6bebf}
+:root[data-theme="gamrot"] .contact-head{color:#a1abac}
+:root[data-theme="gamrot"] .contact-row{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .person-link:hover b{color:#f06a15}
+:root[data-theme="gamrot"] .person small{color:#b8bfc0}
+:root[data-theme="gamrot"] .contact-data span, :root[data-theme="gamrot"] .contact-data a{color:#d2d7d7}
+:root[data-theme="gamrot"] .verified{background:#161818;color:#f06a15}
+:root[data-theme="gamrot"] .duplicate{background:#2c1f06;color:#f3e5cb}
+:root[data-theme="gamrot"] .contact-row > small{color:#b8bfc0}
+:root[data-theme="gamrot"] .pool article{background:#0a0a0a}
+:root[data-theme="gamrot"] .pool article:hover, :root[data-theme="gamrot"] .pool article:focus-visible, :root[data-theme="gamrot"] .source-card:hover, :root[data-theme="gamrot"] .source-card:focus-visible{border-color:#4a5352;box-shadow:0 14px 34px rgba(0, 0, 0, 0.09)}
+:root[data-theme="gamrot"] .pool article > div > b{color:#f06a15;background:#171a19}
+:root[data-theme="gamrot"] .pool p{color:#c9cfcf}
+:root[data-theme="gamrot"] .pool footer{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .pool footer small{color:#bbc2c3}
+:root[data-theme="gamrot"] .pool footer button{color:#f06a15}
+:root[data-theme="gamrot"] .pipeline-summary article{background:#0a0a0a}
+:root[data-theme="gamrot"] .pipeline-summary article.warn{border-color:#4c3e17;background:#201905}
+:root[data-theme="gamrot"] .pipeline-summary small{color:#b6bebf}
+:root[data-theme="gamrot"] .lost-archive header small{color:#b8c0c0}
+:root[data-theme="gamrot"] .lost-archive header span{background:#2f2307;color:#f8f1e0}
+:root[data-theme="gamrot"] .archive-row{background:#0a0a0a}
+:root[data-theme="gamrot"] .archive-row:hover{border-color:#373e3d}
+:root[data-theme="gamrot"] .archive-row small, :root[data-theme="gamrot"] .archive-row span:not(:first-child){color:#b8c0c0}
+:root[data-theme="gamrot"] .pipeline > section{background:#151817}
+:root[data-theme="gamrot"] .pipeline > section > header span{background:#232726}
+:root[data-theme="gamrot"] .pipeline article{background:#0a0a0a;border:1px solid #1f2322;box-shadow:0 1px 2px #0000000b}
+:root[data-theme="gamrot"] .pipeline article small{color:#f06a15}
+:root[data-theme="gamrot"] .pipeline p{color:#cad0d0}
+:root[data-theme="gamrot"] .pipeline-warning{background:#291e06;color:#f1e4ce}
+:root[data-theme="gamrot"] .pipeline-empty{border:1px dashed #292e2d;color:#b8bfc0}
+:root[data-theme="gamrot"] .relation-strip button{border:1px solid #1f2323;background:#0b0d0d;color:#f0f1f1}
+:root[data-theme="gamrot"] .relation-strip small{color:#b6bebf}
+:root[data-theme="gamrot"] .pipeline > section > button{border:1px dashed #475150;color:#bdc5c5}
+:root[data-theme="gamrot"] .task-toolbar{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .task-toolbar label{color:#bbc2c3}
+:root[data-theme="gamrot"] .task-toolbar select{border:1px solid #2b302f;background:#0a0a0a;color:#f0f2f2}
+:root[data-theme="gamrot"] .task{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .task-actions .icon, :root[data-theme="gamrot"] .icon.danger{border-color:#361515;background:#170303;color:#e6bdbd}
+:root[data-theme="gamrot"] .task small{color:#b8bfc0}
+:root[data-theme="gamrot"] .link-action{color:#f06a15}
+:root[data-theme="gamrot"] .inline-tags span{background:#141616;color:#e3e6e6}
+:root[data-theme="gamrot"] .search-picker small{color:#bbc2c3}
+:root[data-theme="gamrot"] .picker-results{border:1px solid #343b3a;background:#0a0a0a;box-shadow:0 18px 35px rgba(0, 0, 0, 0.16)}
+:root[data-theme="gamrot"] .picker-results button{border-bottom:1px solid #1f2322;background:#0a0a0a;color:#f0f2f2}
+:root[data-theme="gamrot"] .picker-results button:hover{background:#111313}
+:root[data-theme="gamrot"] .picker-results span{color:#bac2c2}
+:root[data-theme="gamrot"] .danger-action{color:#e6bdbd !important;border-color:#361515 !important;background:#170303 !important}
+:root[data-theme="gamrot"] .task.done b{color:#aab3b3}
+:root[data-theme="gamrot"] .task.done > button{background:#c05510;color:#fff;border-color:#c05510}
+:root[data-theme="gamrot"] .agenda > b{color:#dbdfdf}
+:root[data-theme="gamrot"] .agenda > div{border-left:1px solid #232827}
+:root[data-theme="gamrot"] .agenda i{background:#c05510}
+:root[data-theme="gamrot"] .agenda small{color:#b8bfc0}
+:root[data-theme="gamrot"] .calendar{border:1px solid #363d3c;color:#f06a15;background:#101211}
+:root[data-theme="gamrot"] .calendar-events{border:1px solid #1f2323;background:#0d0f0e}
+:root[data-theme="gamrot"] .calendar-events > small{color:#bec5c5}
+:root[data-theme="gamrot"] .calendar-events a{border-top:1px solid #1f2322;color:#f2f3f3}
+:root[data-theme="gamrot"] .calendar-events a span{color:#bec5c5}
+:root[data-theme="gamrot"] .calendar-toolbar{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .calendar-period-controls b{color:#f0f2f2}
+:root[data-theme="gamrot"] .segmented{border:1px solid #212524;background:#0e0f0f}
+:root[data-theme="gamrot"] .segmented button, :root[data-theme="gamrot"] .calendar-actions button{color:#d8dcdc}
+:root[data-theme="gamrot"] .segmented button.active{background:#c05510;color:#ffffff}
+:root[data-theme="gamrot"] .calendar-actions .secondary{border:1px solid #2b302f;background:#0a0a0a}
+:root[data-theme="gamrot"] .sync-state{border:1px solid #202424;background:#101211;color:#edefef}
+:root[data-theme="gamrot"] .sync-state small{color:#c9cfcf}
+:root[data-theme="gamrot"] .calendar-slot{border:1px solid #1f2323;background:#0b0d0d}
+:root[data-theme="gamrot"] .calendar-slot > strong{color:#f0f2f2}
+:root[data-theme="gamrot"] .calendar-slot > small{color:#a5aeaf}
+:root[data-theme="gamrot"] .calendar-slot > .name-day{color:#f06a15}
+:root[data-theme="gamrot"] .calendar-slot.public-holiday{background:#190b07;border-color:#381c13}
+:root[data-theme="gamrot"] .calendar-slot.public-holiday > strong{color:#e5c4bd}
+:root[data-theme="gamrot"] .public-holiday-badge{background:#2b1912;color:#e5c4bd}
+:root[data-theme="gamrot"] .calendar-item{border-left:3px solid #c05510;background:#111313;color:#f0f2f2}
+:root[data-theme="gamrot"] .calendar-item:hover, :root[data-theme="gamrot"] .calendar-item:focus-visible, :root[data-theme="gamrot"] .task:hover, :root[data-theme="gamrot"] .task:focus-visible{border-color:#4a5352;box-shadow:0 10px 24px rgba(0, 0, 0, 0.1)}
+:root[data-theme="gamrot"] .calendar-item.google{border-left-color:#365ab9;background:#040a1b}
+:root[data-theme="gamrot"] .calendar-item span, :root[data-theme="gamrot"] .calendar-item small{color:#c7cdcd}
+:root[data-theme="gamrot"] .calendar-item button{color:#e6bdbd}
+:root[data-theme="gamrot"] .merge-trigger{background:#2b2106;color:#fbf2e0}
+:root[data-theme="gamrot"] .merge-hint{color:#d5d9d9}
+:root[data-theme="gamrot"] .export-field-actions .link-action{color:#f06a15}
+:root[data-theme="gamrot"] .export-field-item{color:#eff0f1}
+:root[data-theme="gamrot"] .export-field-item:hover{background:#101212}
+:root[data-theme="gamrot"] .merge-option{border:1px solid #1f2323;background:#0b0d0d}
+:root[data-theme="gamrot"] .merge-option.active{border-color:#c05510;background:#111313;box-shadow:0 0 0 2px rgba(240, 106, 21, 0.08)}
+:root[data-theme="gamrot"] .merge-option small{color:#c4cbcb}
+:root[data-theme="gamrot"] .master-tag{background:#c05510;color:#fff}
+:root[data-theme="gamrot"] .detail-section{border:1px solid #1f2322;background:#0b0d0d}
+:root[data-theme="gamrot"] .detail-section h3{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .timeline-item{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .timeline-item small{color:#bbc2c3}
+:root[data-theme="gamrot"] .timeline-item p{color:#e7eaea}
+:root[data-theme="gamrot"] .timeline-item.done b{color:#a9b3b3}
+:root[data-theme="gamrot"] .rank{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .rank i{background:#181b1a}
+:root[data-theme="gamrot"] .rank i b{background:#c05510}
+:root[data-theme="gamrot"] .rank strong{color:#cbd1d1}
+:root[data-theme="gamrot"] .source-stat{border-bottom:1px solid #1f2322}
+:root[data-theme="gamrot"] .source-stat span, :root[data-theme="gamrot"] .source-stat strong{color:#b7bfbf}
+:root[data-theme="gamrot"] .source-stat strong{color:#f06a15}
+:root[data-theme="gamrot"] .clickable-row:hover{background:#101212}
+:root[data-theme="gamrot"] .radar-grid button{border:1px solid #1f2323;background:#0d0f0e}
+:root[data-theme="gamrot"] .radar-grid button:hover, :root[data-theme="gamrot"] .radar-grid button:focus-visible{border-color:#c05510;box-shadow:0 14px 30px rgba(240, 106, 21, 0.12)}
+:root[data-theme="gamrot"] .radar-grid b{color:#f06a15}
+:root[data-theme="gamrot"] .radar-grid small{color:#bec5c5}
+:root[data-theme="gamrot"] .radar-list button{border:1px solid #1f2323;background:#0a0a0a}
+:root[data-theme="gamrot"] .radar-list strong{color:#f06a15}
+:root[data-theme="gamrot"] .radar-list small{color:#bec5c5}
+:root[data-theme="gamrot"] .sales-intel-card{border-bottom:1px solid #1f2323;background:#0e0f0f}
+:root[data-theme="gamrot"] .sales-intel-card > div, :root[data-theme="gamrot"] .sales-intel-card article{border:1px solid #202423;background:#0a0a0a}
+:root[data-theme="gamrot"] .sales-intel-card span{color:#f06a15}
+:root[data-theme="gamrot"] .sales-intel-card strong{color:#f06a15}
+:root[data-theme="gamrot"] .sales-intel-card ul{color:#e0e4e4}
+:root[data-theme="gamrot"] .sales-intel-card p{color:#e0e4e4}
+:root[data-theme="gamrot"] .intel-actions button, :root[data-theme="gamrot"] .outreach-box button{border:1px solid #292e2e;background:#c05510;color:#fff}
+:root[data-theme="gamrot"] .intel-actions .secondary{background:#0a0a0a;color:#ebeded}
+:root[data-theme="gamrot"] .outreach-box button.secondary{background:#0a0a0a;color:#ebeded}
+:root[data-theme="gamrot"] .qualification-panel{border-bottom:1px solid #1f2323}
+:root[data-theme="gamrot"] .qualification-panel span{background:#201805;color:#fbf4e0}
+:root[data-theme="gamrot"] .qualification-panel span.done{background:#141716;color:#f06a15}
+:root[data-theme="gamrot"] .outreach-box{border:1px solid #202423;background:#0d0f0e}
+:root[data-theme="gamrot"] .outreach-box pre{color:#eaecec}
+:root[data-theme="gamrot"] .company-intel-card{border-top:1px solid #1f2323}
+:root[data-theme="gamrot"] .mini-duplicate{background:#190504;color:#e5bdba}
+:root[data-theme="gamrot"] .email-status-card{border:1px solid #202423;background:#0e0f0f}
+:root[data-theme="gamrot"] .email-status-card small{color:#cbd0d1}
+:root[data-theme="gamrot"] .email-rules{background:#1b1304;color:#f5f0e4}
+:root[data-theme="gamrot"] .email-rules b{color:#fbf4e6}
+:root[data-theme="gamrot"] .email-account{border:1px solid #202423;background:#0d0f0e}
+:root[data-theme="gamrot"] .email-account small{color:#cad0d0}
+:root[data-theme="gamrot"] .pending-tag{background:#2b2006;color:#fbf3e0}
+:root[data-theme="gamrot"] .email-folders > button:not(.primary){color:#e6e9e9}
+:root[data-theme="gamrot"] .email-folders > button.active{background:#141716;color:#f06a15}
+:root[data-theme="gamrot"] .email-setup-warning{background:#1f1704;color:#fbf3e2}
+:root[data-theme="gamrot"] .email-list{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .email-list button{border-bottom:1px solid #1f2322;background:#0a0a0a}
+:root[data-theme="gamrot"] .email-list small{color:#bfc6c6}
+:root[data-theme="gamrot"] .email-detail-meta > div{border:1px solid #1f2323;background:#0d0f0e}
+:root[data-theme="gamrot"] .email-detail-meta span{color:#acb5b5}
+:root[data-theme="gamrot"] .email-detail-meta small{color:#cad0d0}
+:root[data-theme="gamrot"] .email-body-preview{border:1px solid #1f2323;background:#0a0a0a;color:#ebeded}
+:root[data-theme="gamrot"] .email-attachments{border:1px solid #1f2323;background:#0d0f0e}
+:root[data-theme="gamrot"] .email-attachments a{border:1px solid #1f2323;color:#f06a15;background:#0a0a0a}
+:root[data-theme="gamrot"] .email-attachments span{color:#bcc3c4}
+:root[data-theme="gamrot"] .email-crm-suggestion{border:1px solid #292f2e;background:#101211}
+:root[data-theme="gamrot"] .email-crm-suggestion span{color:#f06a15}
+:root[data-theme="gamrot"] .email-crm-suggestion small{color:#cfd4d5}
+:root[data-theme="gamrot"] .toast{background:#111212;color:#fff;box-shadow:0 10px 30px #00000040}
+:root[data-theme="gamrot"] .email-row{border-bottom:1px solid var(--border, #202122)}
+:root[data-theme="gamrot"] .email-row.selected{background:rgba(192, 85, 16, 0.08)}
+:root[data-theme="gamrot"] .email-select input{accent-color:#c05510}
+:root[data-theme="gamrot"] .booking-page{background:#0f1111}
+:root[data-theme="gamrot"] .booking-card{background:#0a0a0a;box-shadow:0 20px 60px #00000022}
+:root[data-theme="gamrot"] .booking-eyebrow{color:#f06a15}
+:root[data-theme="gamrot"] .booking-card h1{color:#f0f2f2}
+:root[data-theme="gamrot"] .booking-subtitle{color:#c7cdcd}
+:root[data-theme="gamrot"] .booking-days button, :root[data-theme="gamrot"] .booking-slots button{border:1px solid #1f2323;background:#0b0d0d;color:#f0f2f2}
+:root[data-theme="gamrot"] .booking-days button.active, :root[data-theme="gamrot"] .booking-slots button.active{background:#c05510;border-color:#c05510;color:#ffffff}
+:root[data-theme="gamrot"] .booking-empty{color:#9ea8a9}
+:root[data-theme="gamrot"] .booking-form{border-top:1px solid #1f2322}
+:root[data-theme="gamrot"] .booking-form label{color:#d5d9d9}
+:root[data-theme="gamrot"] .booking-form input, :root[data-theme="gamrot"] .booking-form textarea{border:1px solid #1f2323;color:#f0f2f2}
+:root[data-theme="gamrot"] .booking-error{color:#e9bab8}
+:root[data-theme="gamrot"] .booking-submit{background:#c05510;color:#ffffff}
+:root[data-theme="gamrot"] .booking-confirmed h1{color:#f06a15}
+:root[data-theme="gamrot"] .booking-link{color:#f06a15}
+:root[data-theme="gamrot"] .theme-option{border:1px solid #1f2323;background:#0b0d0d;color:#f0f2f2}
+:root[data-theme="gamrot"] .theme-option:hover{border-color:#c05510}
+:root[data-theme="gamrot"] .theme-option.active{border-color:#c05510;box-shadow:0 0 0 2px #f06a1533}
+:root[data-theme="gamrot"] .theme-option small{color:#bec5c5}
+:root[data-theme="gamrot"] .theme-swatch{border:1px solid #f7f7f71a}
+:root[data-theme="gamrot"] [style*="color: #657d7f"]{color:#c4cacb !important}

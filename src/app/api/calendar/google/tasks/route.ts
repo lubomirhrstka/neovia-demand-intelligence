@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const payload = {
     summary: task.title,
     description: [
-      "NEOVIA Demand Intelligence",
+      "LeadHunter",
       `Typ: ${task.kind === "meeting" ? "schůzka" : task.kind === "note" ? "poznámka" : "úkol"}`,
       task.company || task.directCompany ? `Firma: ${task.company || task.directCompany}` : "",
       [task.contactFirstName, task.contactLastName].filter(Boolean).join(" ") || task.contactEmail
