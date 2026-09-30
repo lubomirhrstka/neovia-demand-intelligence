@@ -2003,6 +2003,7 @@ type ImportedDemand = {
   companyId: string | null;
   company: string | null;
   companySource: string | null;
+  companyWebsite: string | null;
   contactId: string | null;
   role: string | null;
   title: string;
@@ -2301,9 +2302,10 @@ const PhoneLink = ({ value }: { value?: string | null }) =>
   ) : (
     <span className="muted-contact">Telefon není uveden</span>
   );
+const normalizeHref = (value: string) => /^https?:\/\//i.test(value) ? value : `https://${value}`;
 const WebsiteLink = ({ value }: { value?: string | null }) => {
   if (!isFilledValue(value)) return <span className="muted-contact">Web není uveden</span>;
-  const href = /^https?:\/\//i.test(value!) ? value! : `https://${value}`;
+  const href = normalizeHref(value!);
   return (
     <a className="contact-action-link" href={href} target="_blank" rel="noreferrer">
       <ArrowUpRight size={14} />
@@ -2341,8 +2343,16 @@ const HighlightedDemandText = ({
       : [<span key={`${prefix}-text`}>{value}</span>];
   return (
     <p>
-      {text.split(contactLinkRegex).map((part, index) => {
+      {text.split(/(https?:\/\/[^\s<>"')]+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+420|00420)?[\s.-]?(?:\d{3}[\s.-]?){3})/gi).map((part, index) => {
         if (!part) return null;
+        if (/^https?:\/\//i.test(part)) {
+          const href = part.replace(/[.,;:]+$/g, "");
+          return (
+            <a className="inline-contact-link" href={href} target="_blank" rel="noreferrer" key={`url-${href}-${index}`}>
+              {href}
+            </a>
+          );
+        }
         if (/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(part)) {
           return (
             <a className="inline-contact-link" href={`mailto:${part}`} key={`email-${part}-${index}`}>
@@ -2384,6 +2394,7 @@ function Demands({
     [detailQualityFilters, setDetailQualityFilters] = useState<string[]>([]),
     [searchHistory, setSearchHistory] = useState<string[]>([]),
     [selectedDemandIds, setSelectedDemandIds] = useState<string[]>([]),
+    [verifyingDemandId, setVerifyingDemandId] = useState<string | null>(null),
     [selected, setSelected] = useState<ImportedDemand | null>(null),
     [companyDetail, setCompanyDetail] = useState<ImportedDemand | null>(null),
     [contactDetail, setContactDetail] = useState<ImportedDemand | null>(null);
@@ -2403,8 +2414,9 @@ function Demands({
     }, 900);
     return () => window.clearTimeout(timeout);
   }, [query]);
-  useEffect(() => {
-    fetch("/api/demands")
+  const loadDemands = async () => {
+    setLoading(true);
+    return fetch("/api/demands")
       .then(async (r) => {
         if (!r.ok) throw new Error();
         const data = await r.json();
@@ -2430,6 +2442,9 @@ function Demands({
       })
       .catch(() => note("Poptávky se nepodařilo načíst."))
       .finally(() => setLoading(false));
+  };
+  useEffect(() => {
+    loadDemands();
   }, []);
   const sources = [...new Set(rows.map((x) => x.source))];
   const roles = [
@@ -2593,6 +2608,38 @@ function Demands({
     window.localStorage.setItem("neovia-compose-draft", JSON.stringify(draft));
     note("Koncept je otevřený v e-mailu ke kontrole před odesláním.");
     goTo("E-mail");
+  };
+  const verifyDemandCompanyWeb = async (demand: ImportedDemand) => {
+    setVerifyingDemandId(demand.id);
+    try {
+      const response = await fetch(`/api/demands/${encodeURIComponent(demand.id)}/verify-company-web`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Ověření firemního webu se nepodařilo.");
+      await loadDemands();
+      setSelected((current) =>
+        current?.id === demand.id
+          ? {
+              ...current,
+              companyWebsite: data.website || current.companyWebsite,
+              demandText: [
+                current.demandText,
+                data.careerUrl ? `Kariérní stránka: ${data.careerUrl}` : "",
+                data.emails?.length ? `Kontakty z webu: ${data.emails.join(", ")}` : "",
+                data.phones?.length ? `Telefony z webu: ${data.phones.join(", ")}` : "",
+              ].filter(Boolean).join("\n"),
+            }
+          : current,
+      );
+      note(
+        `Ověření dokončeno: ${data.website ? "web doplněn" : "web zkontrolován"}, kontakty založeny ${data.contactsCreated || 0}.`,
+      );
+    } catch (error) {
+      note(error instanceof Error ? error.message : "Ověření firemního webu se nepodařilo.");
+    } finally {
+      setVerifyingDemandId(null);
+    }
   };
   const removeDemand = async () => {
     if (!selected) return;
@@ -3026,6 +3073,10 @@ function Demands({
                 </button>
               </span>
               <span>
+                <b>Web firmy</b>
+                <WebsiteLink value={selected.companyWebsite} />
+              </span>
+              <span>
                 <b>Lokalita</b>
                 {selected.location || "ČR"}
               </span>
@@ -3059,6 +3110,41 @@ function Demands({
                 </span>
               </span>
             </div>
+            <section className="demand-source-panel">
+              <div>
+                <span>ZDROJE A OVĚŘENÍ</span>
+                <h3>{selected.source.toLowerCase().includes("linkedin") ? "LinkedIn pracovní příležitost" : "Zdroj poptávky"}</h3>
+                <p>
+                  Odkazy se otevírají v novém okně. Ověření webu projde veřejný web firmy a kariérní/kontaktní stránky,
+                  doplní firemní web a případné kontaktní údaje do CRM.
+                </p>
+              </div>
+              <div className="demand-source-actions">
+                {selected.sourceUrl ? (
+                  <a className="primary-link-button" href={selected.sourceUrl} target="_blank" rel="noreferrer">
+                    <ArrowUpRight size={15} />
+                    Otevřít pozici
+                  </a>
+                ) : (
+                  <button type="button" className="secondary" disabled>
+                    Odkaz na pozici není v alertu
+                  </button>
+                )}
+                {selected.companyWebsite && (
+                  <a className="secondary button-link" href={normalizeHref(selected.companyWebsite)} target="_blank" rel="noreferrer">
+                    Web firmy
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={verifyingDemandId === selected.id || !selected.companyId}
+                  onClick={() => verifyDemandCompanyWeb(selected)}
+                >
+                  {verifyingDemandId === selected.id ? "Ověřuji…" : "Ověřit web a kontakty"}
+                </button>
+              </div>
+            </section>
             <section className="sales-intel-card">
               <div>
                 <span>OBCHODNÍ SKÓRE</span>

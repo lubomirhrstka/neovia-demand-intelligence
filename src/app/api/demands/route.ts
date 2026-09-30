@@ -50,7 +50,7 @@ export async function GET() {
     role: demands.role, technologies: demands.technologies, location: demands.location,
     relevanceScore: demands.relevanceScore, importedAt: demands.importedAt, demandText: demands.demandText,
     sourceUrl: demands.sourceUrl, workMode: demands.workMode,
-    companyId: companies.id, company: companies.name, companySource: companies.source,
+    companyId: companies.id, company: companies.name, companySource: companies.source, companyWebsite: companies.website,
     contactId: contacts.id, contactFirstName: contacts.firstName, contactLastName: contacts.lastName,
     contactRole: contacts.role, contactEmail: contacts.email, contactPhone: contacts.phone, contactSource: contacts.source,
   }).from(demands)
