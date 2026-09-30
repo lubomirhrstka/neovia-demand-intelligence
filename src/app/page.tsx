@@ -3146,55 +3146,72 @@ function Demands({
                 <button onClick={() => setSelected(null)}>×</button>
               </div>
             </header>
-            <div className="detail-meta">
-              <span>
-                <b>Firma</b>
-                <button
-                  className="entity-link"
-                  type="button"
-                  onClick={() => openDemandCompanyCard(selected)}
-                >
-                  {selected.company || "Nezařazená firma"}
-                </button>
-              </span>
-              <span>
-                <b>Web firmy</b>
-                <WebsiteLink value={selected.companyWebsite} />
-              </span>
-              <span>
-                <b>Lokalita</b>
-                {selected.location || "ČR"}
-              </span>
-              <span>
-                <b>Kontakt</b>
-                <button
-                  className="entity-link"
-                  type="button"
-                  onClick={() => openDemandContactCard(selected)}
-                  disabled={!selected.contactId && contactName(selected) === "Kontakt není uveden"}
-                >
-                  {contactName(selected)}
-                </button>
-              </span>
-              <span>
-                <b>E-mail</b>
-                <EmailLink value={selected.contactEmail} />
-              </span>
-              <span>
-                <b>Telefon</b>
-                <PhoneLink value={selected.contactPhone} />
-              </span>
-              <span>
-                <b>Import</b>
-                {new Date(selected.importedAt).toLocaleString("cs-CZ")}
-              </span>
-              <span>
-                <b>Kvalita detailu</b>
-                <span className={hasFullDemandText(selected) ? "detail-ok" : "detail-missing"}>
-                  {hasFullDemandText(selected) ? "Plné znění uloženo" : "Detail je potřeba ověřit u zdroje"}
+            <section className="sales-intel-card intel-score-first">
+              <div>
+                <span>OBCHODNÍ SKÓRE</span>
+                <strong>{demandIntelligence(selected).score}%</strong>
+                <b>{demandIntelligence(selected).label}</b>
+              </div>
+              <article>
+                <h3>Proč je poptávka relevantní</h3>
+                <ul>
+                  {demandIntelligence(selected).reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </article>
+            </section>
+            <div className="detail-meta-grouped">
+              <div className="meta-group">
+                <h4>Firma</h4>
+                <span>
+                  <b>Název</b>
+                  <button
+                    className="entity-link"
+                    type="button"
+                    onClick={() => openDemandCompanyCard(selected)}
+                  >
+                    {selected.company || "Nezařazená firma"}
+                  </button>
                 </span>
-              </span>
+                <span>
+                  <b>Web firmy</b>
+                  <WebsiteLink value={selected.companyWebsite} />
+                </span>
+                <span>
+                  <b>Lokalita</b>
+                  {selected.location || "ČR"}
+                </span>
+              </div>
+              <div className="meta-group">
+                <h4>Kontakt</h4>
+                <span>
+                  <b>Jméno</b>
+                  <button
+                    className="entity-link"
+                    type="button"
+                    onClick={() => openDemandContactCard(selected)}
+                    disabled={!selected.contactId && contactName(selected) === "Kontakt není uveden"}
+                  >
+                    {contactName(selected)}
+                  </button>
+                </span>
+                <span>
+                  <b>E-mail</b>
+                  <EmailLink value={selected.contactEmail} />
+                </span>
+                <span>
+                  <b>Telefon</b>
+                  <PhoneLink value={selected.contactPhone} />
+                </span>
+              </div>
             </div>
+            <p className="detail-footnote">
+              Importováno {new Date(selected.importedAt).toLocaleString("cs-CZ")} ·{" "}
+              <span className={hasFullDemandText(selected) ? "detail-ok" : "detail-missing"}>
+                {hasFullDemandText(selected) ? "Plné znění uloženo" : "Detail je potřeba ověřit u zdroje"}
+              </span>
+            </p>
             <section className="demand-source-panel">
               <div>
                 <span>ZDROJE A OVĚŘENÍ</span>
@@ -3230,36 +3247,6 @@ function Demands({
                 </button>
               </div>
             </section>
-            <section className="sales-intel-card">
-              <div>
-                <span>OBCHODNÍ SKÓRE</span>
-                <strong>{demandIntelligence(selected).score}%</strong>
-                <b>{demandIntelligence(selected).label}</b>
-              </div>
-              <article>
-                <h3>Proč je poptávka relevantní</h3>
-                <ul>
-                  {demandIntelligence(selected).reasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
-              </article>
-              <article>
-                <h3>Doporučený další krok</h3>
-                <p>{recommendedNextStep(selected)}</p>
-                <div className="intel-actions">
-                  <button type="button" onClick={() => createDemandNextStepTask(selected)}>
-                    Vytvořit úkol
-                  </button>
-                  <button type="button" className="secondary" onClick={() => openDemandEmailDraft(selected)}>
-                    E-mail
-                  </button>
-                  <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
-                    Zkopírovat cold e-mail
-                  </button>
-                </div>
-              </article>
-            </section>
             <section className="qualification-panel">
               <h3>Kvalifikační checklist</h3>
               <div>
@@ -3269,6 +3256,24 @@ function Demands({
                     {item.label}
                   </span>
                 ))}
+              </div>
+            </section>
+            <section className="demand-source-panel next-step-panel">
+              <div>
+                <span>DALŠÍ KROK</span>
+                <h3>Doporučený další krok</h3>
+                <p>{recommendedNextStep(selected)}</p>
+              </div>
+              <div className="demand-source-actions">
+                <button type="button" className="primary-link-button" onClick={() => createDemandNextStepTask(selected)}>
+                  Vytvořit úkol
+                </button>
+                <button type="button" className="secondary" onClick={() => openDemandEmailDraft(selected)}>
+                  E-mail
+                </button>
+                <button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(outreachDraft(selected)).then(() => note("Návrh e-mailu je zkopírovaný do schránky."))}>
+                  Zkopírovat cold e-mail
+                </button>
               </div>
             </section>
             <article className="detail-text">

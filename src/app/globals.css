@@ -378,6 +378,47 @@
   letter-spacing: 0.4px;
   color: #819394;
 }
+.detail-meta-grouped {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  padding: 18px 23px;
+  background: #f6f9f8;
+  border-top: 1px solid #edf1f0;
+  border-bottom: 1px solid #edf1f0;
+}
+.meta-group h4 {
+  margin: 0 0 8px;
+  font: 700 9px "DM Mono";
+  letter-spacing: 0.5px;
+  color: #819394;
+  text-transform: uppercase;
+}
+.meta-group span {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 6px;
+  font-size: 11px;
+  color: #22383a;
+  padding: 3px 0;
+}
+.meta-group span b {
+  font: 700 9px "DM Mono";
+  color: #819394;
+  align-self: center;
+}
+.detail-footnote {
+  margin: 0;
+  padding: 8px 23px;
+  font-size: 10px;
+  color: #93a4a5;
+}
+.intel-score-first {
+  border-top: none;
+}
+.next-step-panel {
+  background: #f6fbfa;
+}
 .contact-action-link,
 .muted-contact {
   display: inline-flex;
