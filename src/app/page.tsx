@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getNameDay, getPublicHolidayName } from "@/lib/czech-calendar";
 import {
   Activity,
@@ -6206,9 +6206,12 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
 }
 function SeznamImapSettings({ note }: { note: (s: string) => void }) {
   const [status, setStatus] = useState<{ connected: boolean; email: string | null; lastSyncAt: string | null } | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sinceDays, setSinceDays] = useState(() =>
+    typeof window !== "undefined" ? window.localStorage.getItem("neovia-linkedin-since-days") || "30" : "30",
+  );
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const load = () => {
     fetch("/api/email/seznam/status")
       .then((r) => (r.ok ? r.json() : null))
@@ -6219,7 +6222,11 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
     load();
   }, []);
   const connect = async () => {
-    if (!email.trim() || !password.trim()) {
+    // Čteme přímo z DOM (přes ref), ne z React stavu — prohlížeč u autofillu
+    // nemusí vyvolat onChange, takže stav zůstane prázdný, i když pole vizuálně vyplněné je.
+    const email = emailRef.current?.value.trim() || "";
+    const password = passwordRef.current?.value || "";
+    if (!email || !password) {
       note("Zadejte e-mail i heslo.");
       return;
     }
@@ -6227,7 +6234,7 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
     const response = await fetch("/api/email/seznam/connect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password }),
+      body: JSON.stringify({ email, password }),
     });
     const data = await response.json();
     setBusy(false);
@@ -6235,7 +6242,7 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
       note(data.error || "Připojení se nezdařilo.");
       return;
     }
-    setPassword("");
+    if (passwordRef.current) passwordRef.current.value = "";
     note("seznam.cz e-mail byl připojen.");
     load();
   };
@@ -6264,6 +6271,19 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
             : "Zadejte e-mail a aplikační heslo pro připojení přes IMAP."}
         </small>
       </div>
+      <label className="since-days-field">
+        Kolik dní zpětně procházet e-maily (Gmail i seznam.cz)
+        <input
+          type="number"
+          min={1}
+          max={365}
+          value={sinceDays}
+          onChange={(e) => {
+            setSinceDays(e.target.value);
+            window.localStorage.setItem("neovia-linkedin-since-days", e.target.value);
+          }}
+        />
+      </label>
       {status?.connected ? (
         <button className="secondary" disabled={busy} onClick={disconnect}>
           Odpojit seznam.cz
@@ -6272,11 +6292,11 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
         <div className="form-grid">
           <label>
             E-mail
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hrstka@seznam.cz" />
+            <input ref={emailRef} defaultValue="" placeholder="hrstka@seznam.cz" autoComplete="username" />
           </label>
           <label>
             Heslo (aplikační)
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input ref={passwordRef} type="password" defaultValue="" autoComplete="current-password" />
           </label>
           <button className="primary" disabled={busy} onClick={connect} style={{ gridColumn: "1 / -1" }}>
             {busy ? "Připojuji…" : "Připojit seznam.cz"}
