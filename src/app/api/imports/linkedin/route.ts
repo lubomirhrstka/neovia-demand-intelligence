@@ -15,10 +15,14 @@ type GmailPart = {
 type GmailMessage = {
   id: string;
   threadId: string;
+  snippet?: string;
   internalDate?: string;
   payload?: GmailPart & { headers?: { name: string; value: string }[] };
 };
 type GmailMessageList = { messages?: { id: string }[] };
+
+const getHeader = (message: GmailMessage, name: string) =>
+  message.payload?.headers?.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || "";
 
 const decodeBody = (data?: string) => {
   if (!data) return "";
@@ -33,6 +37,19 @@ const htmlFromPart = (part?: GmailPart): string => {
   for (const child of part.parts || []) {
     const html = htmlFromPart(child);
     if (html) return html;
+  }
+  return "";
+};
+
+const textFromPart = (part?: GmailPart): string => {
+  if (!part) return "";
+  if (part.mimeType === "text/plain" && part.body?.data) return decodeBody(part.body.data);
+  if (part.mimeType === "text/html" && part.body?.data) {
+    return stripTags(decodeBody(part.body.data)).replace(/\s{2,}/g, " ").trim();
+  }
+  for (const child of part.parts || []) {
+    const text = textFromPart(child);
+    if (text) return text;
   }
   return "";
 };
@@ -54,6 +71,7 @@ type ParsedJob = {
   company: string;
   location: string;
   url: string;
+  detail?: string;
 };
 
 /** Heuristický parser LinkedIn job-alert e-mailu: najde odkazy na /jobs/view/<id> a k nim dohledá firmu + lokalitu v následujícím textu. */
@@ -89,6 +107,100 @@ function parseLinkedInJobs(html: string): ParsedJob[] {
   }
   return jobs;
 }
+
+const cleanLinkedInTitle = (value: string) =>
+  value
+    .replace(/^fwd:\s*/i, "")
+    .replace(/^re:\s*/i, "")
+    .replace(/^příležitost na pozici\s+/i, "")
+    .replace(/^upozornění na nové pracovní příležitosti?\s*/i, "")
+    .trim();
+
+const stableTextId = (messageId: string, title: string, company: string, index: number) =>
+  `${messageId}:${index}:${Buffer.from(`${title}|${company}`.toLowerCase()).toString("base64url").slice(0, 48)}`;
+
+function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""): ParsedJob[] {
+  const normalized = text
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const jobs: ParsedJob[] = [];
+  const seen = new Set<string>();
+
+  const add = (titleRaw: string, companyRaw: string, locationRaw = "", detail = "") => {
+    const title = cleanLinkedInTitle(titleRaw)
+      .replace(/\s+a\s+\d+\s+dalších.*$/i, "")
+      .replace(/\s+ve společnosti\s+.*$/i, "")
+      .trim();
+    const company = companyRaw
+      .replace(/\s+a\s+\d+\s+dalších.*$/i, "")
+      .replace(/[.,;:]+$/g, "")
+      .trim();
+    if (!title || title.length < 3 || !company || company.length < 2) return;
+    const key = `${title.toLowerCase()}|${company.toLowerCase()}|${locationRaw.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    jobs.push({
+      externalId: stableTextId(messageId, title, company, jobs.length),
+      title: title.slice(0, 220),
+      company: company.slice(0, 180),
+      location: locationRaw.trim().slice(0, 180),
+      url: "",
+      detail: detail || normalized.slice(0, 1200),
+    });
+  };
+
+  const subjectMatch = subject.match(/(?:pozici|pozice)\s+(.+?)\s+ve společnosti\s+(.+?)(?:\s+a\s+\d+\s+dalších|,\s+které|$)/i);
+  if (subjectMatch) add(subjectMatch[1], subjectMatch[2], "", normalized.slice(0, 1200));
+
+  const lines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(od|komu|datum|předmět|-----|linkedin|snadná žádost|1 spojení)$/i.test(line));
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const colonMatch = line.match(/^(.{2,120}?):\s*(.{3,220})(?:\s+[–-]\s+(.{2,160}))?$/);
+    if (colonMatch) {
+      const company = colonMatch[1].trim();
+      const title = colonMatch[2].trim();
+      if (!/^(od|komu|datum|předmět)$/i.test(company) && !company.includes("@")) {
+        add(title, company, colonMatch[3] || "", lines.slice(Math.max(0, i - 2), i + 4).join("\n"));
+      }
+      continue;
+    }
+
+    const dotLine = lines[i + 1] || "";
+    if (dotLine.includes("·") && line.length > 3 && line.length < 180) {
+      const [company, ...locationParts] = dotLine.split("·").map((part) => part.trim());
+      add(line, company, locationParts.join(" · "), lines.slice(i, i + 3).join("\n"));
+      i += 1;
+    }
+  }
+
+  return jobs;
+}
+
+async function listLinkedInCandidateMessages(accessToken: string) {
+  const queries = [
+    "from:jobalerts-noreply@linkedin.com newer_than:30d",
+    "\"jobalerts-noreply@linkedin.com\" newer_than:30d",
+    "\"Příležitost na pozici\" \"LinkedIn\" newer_than:30d",
+    "\"pracovní příležitosti LinkedIn\" newer_than:30d",
+  ];
+  const unique = new Map<string, { id: string }>();
+  for (const query of queries) {
+    const list = await gmailFetch<GmailMessageList>(
+      accessToken,
+      "/messages?maxResults=30&q=" + encodeURIComponent(query),
+    );
+    for (const message of list.messages || []) unique.set(message.id, message);
+  }
+  return [...unique.values()].slice(0, 40);
+}
+
 const relevanceFor = (text: string, keywords: string[]) => {
   const lower = text.toLowerCase();
   const matches = keywords.filter((k) => k && lower.includes(k.toLowerCase())).length;
@@ -130,17 +242,24 @@ export async function POST() {
   const warnings: string[] = [];
 
   try {
-    const list = await gmailFetch<GmailMessageList>(
-      account.accessToken,
-      "/messages?maxResults=15&q=" + encodeURIComponent("from:jobalerts-noreply@linkedin.com"),
-    );
+    const messages = await listLinkedInCandidateMessages(account.accessToken);
     const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
 
-    for (const item of list.messages || []) {
+    for (const item of messages) {
       const message = await gmailFetch<GmailMessage>(account.accessToken, `/messages/${item.id}?format=full`);
+      const subject = getHeader(message, "Subject");
       const html = htmlFromPart(message.payload);
-      if (!html) continue;
-      const jobs = parseLinkedInJobs(html);
+      const text = textFromPart(message.payload) || message.snippet || "";
+      if (!html && !text && !subject) continue;
+      const jobs = [
+        ...parseLinkedInJobs(html),
+        ...parseLinkedInJobsFromText(`${subject}\n${text}`, message.id, subject),
+      ].filter((job, index, all) =>
+        all.findIndex((candidate) =>
+          candidate.externalId === job.externalId ||
+          (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
+        ) === index,
+      );
       found += jobs.length;
 
       for (const job of jobs) {
@@ -167,17 +286,19 @@ export async function POST() {
           externalId,
           title: job.title,
           source: "LinkedIn",
-          sourceUrl: job.url,
+          sourceUrl: job.url || null,
           role: job.title,
           location: job.location || null,
-          demandText: `${job.title} — ${companyName}${job.location ? ` · ${job.location}` : ""}`,
-          relevanceScore: relevanceFor(`${job.title} ${job.location}`, keywords),
+          demandText: job.detail || `${job.title} — ${companyName}${job.location ? ` · ${job.location}` : ""}`,
+          relevanceScore: relevanceFor(`${job.title} ${job.location} ${job.detail || ""}`, keywords),
           companyId: companyRecord.id,
           ownerId: session.user.id,
         });
         created += 1;
       }
     }
+    if (!messages.length) warnings.push("V Gmailu nebyly nalezeny LinkedIn alerty ani přeposlané zprávy za posledních 30 dní.");
+    if (messages.length && !found) warnings.push("LinkedIn e-maily byly nalezeny, ale nepodařilo se z nich vytěžit žádnou pozici.");
   } catch (error) {
     const message = error instanceof Error ? error.message : "LinkedIn import selhal.";
     warnings.push(message);
