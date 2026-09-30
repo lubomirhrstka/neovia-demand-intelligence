@@ -3531,6 +3531,30 @@ button.metric:hover {
   background: white;
   color: #315355;
 }
+.outreach-box p {
+  margin: 0 0 12px;
+  color: #456366;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.career-workflow-box {
+  background: #f3f6ff;
+  border-color: #cfdbff;
+}
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c9dcda;
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.outreach-box .button-link.secondary {
+  background: white;
+  color: #315355;
+}
 .qualification-panel {
   padding: 16px 22px;
   border-bottom: 1px solid #e4eeee;

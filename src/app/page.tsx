@@ -2214,6 +2214,36 @@ const outreachDraft = (d: ImportedDemand) => {
   const company = d.company || "vaší společnosti";
   return `Dobrý den,\n\nzaznamenal jsem, že ${company} řeší pozici ${role}. Zaměřuji se na IT outsourcing a dodávku ověřených specialistů, včetně oblastí kybernetické bezpečnosti, NIS2, ISMS a IT delivery.\n\nRád bych krátce ověřil, jestli má smysl probrat možnost rychlého doplnění kapacity nebo bodyshop spolupráce.\n\nMůžeme si zavolat na 10 minut?`;
 };
+const careerApplicationPrompt = (d: ImportedDemand) => {
+  const role = d.role || d.title;
+  const company = d.company || "firma není v alertu jednoznačně uvedená";
+  const location = d.location || "lokalita není uvedená";
+  const score = demandIntelligence(d);
+  const signals = [...keywordPool(d), ...rolePool(d)].filter(Boolean).slice(0, 18);
+  const detail = d.demandText || "Detail pozice zatím není k dispozici, pracuj jen s dostupnými údaji z LinkedIn alertu.";
+  return `Jsi seniorní kariérní poradce a copywriter pro IT / cybersecurity role.
+
+Připrav mi personalizovaný výstup pro reakci na tuto LinkedIn pracovní příležitost.
+
+Pozice: ${role}
+Firma: ${company}
+Lokalita / režim: ${location}${d.workMode ? ` / ${d.workMode}` : ""}
+Zdroj: ${d.source}${d.sourceUrl ? ` (${d.sourceUrl})` : ""}
+Relevance v LeadHunteru: ${score.score}% — ${score.label}
+Signály a klíčová slova: ${signals.length ? signals.join(", ") : "nejsou spolehlivě vytěžena"}
+
+Text / dostupný detail pozice:
+${detail}
+
+Vytvoř:
+1. stručné zhodnocení vhodnosti pozice pro profil IT/Cybersecurity/NIS2,
+2. doporučené úpravy CV pro tuto konkrétní pozici,
+3. hotový stylizovaný profil do CV v češtině,
+4. motivační dopis v češtině — profesionální, konkrétní, bez přehnaného tlaku,
+5. krátkou LinkedIn/InMail zprávu náboráři, pokud není dostupný e-mail.
+
+Neinventuj zkušenosti. Pokud něco chybí, označ to jako údaj k doplnění.`;
+};
 type LocalEmailDraft = {
   id?: string;
   to: string;
@@ -3111,6 +3141,33 @@ function Demands({
                   </button>
                 </div>
               </div>
+              {selected.source.toLowerCase().includes("linkedin") && (
+                <div className="outreach-box career-workflow-box">
+                  <h3>AI workflow pro CV a motivační dopis</h3>
+                  <p>
+                    LinkedIn alert je vytěžený jako kandidátská příležitost. Tento prompt použijte pro vygenerování
+                    stylizovaného CV, motivačního dopisu a krátké zprávy náboráři přímo k této pozici.
+                  </p>
+                  <pre>{careerApplicationPrompt(selected)}</pre>
+                  <div className="outreach-actions">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(careerApplicationPrompt(selected))
+                          .then(() => note("AI prompt pro CV a motivační dopis je zkopírovaný."))
+                      }
+                    >
+                      Kopírovat AI prompt
+                    </button>
+                    {selected.sourceUrl && (
+                      <a className="secondary button-link" href={selected.sourceUrl} target="_blank" rel="noreferrer">
+                        Otevřít pozici
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="keyword-pool">
                 <h3>Vytěžené role a štítky</h3>
                 <div>
