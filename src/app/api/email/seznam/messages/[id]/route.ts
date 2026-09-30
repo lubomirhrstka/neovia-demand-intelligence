@@ -12,7 +12,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   try {
-    const detail = await fetchSeznamMessage(account.email, account.accessToken, id);
+    const detail = await fetchSeznamMessage(account.email, account.accessToken, decodeURIComponent(id));
     return NextResponse.json(detail);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Detail Seznam e-mailu se nepodařilo načíst.";
