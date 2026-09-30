@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { fetchSeznamInboxMessages, getSeznamImapAccount } from "@/lib/seznam-imap";
+import { fetchSeznamFolderMessages, getSeznamImapAccount } from "@/lib/seznam-imap";
 import { emailAccounts } from "@/lib/schema";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -16,22 +16,28 @@ export async function GET(request: Request) {
   if (!account?.accessToken) {
     return NextResponse.json({ connected: false, labels: [], messages: [] });
   }
-  if (folder !== "inbox") {
+
+  if (folder === "review" || folder === "followups") {
     return NextResponse.json({
       connected: true,
       account: account.email,
-      labels: [{ id: "INBOX", name: "Doručené", messagesTotal: 0 }],
+      labels: [],
       messages: [],
-      info: "Seznam IMAP zobrazení zatím načítá pouze Doručené.",
     });
   }
 
   try {
-    const payload = await fetchSeznamInboxMessages(account.email, account.accessToken, 30);
-    await getDb().update(emailAccounts).set({ lastSyncAt: new Date(), updatedAt: new Date() }).where(eq(emailAccounts.id, account.id));
+    const payload = await fetchSeznamFolderMessages(account.email, account.accessToken, folder, 40);
+    await getDb()
+      .update(emailAccounts)
+      .set({ lastSyncAt: new Date(), updatedAt: new Date() })
+      .where(eq(emailAccounts.id, account.id));
     return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Seznam IMAP čtení selhalo.";
-    return NextResponse.json({ connected: true, account: account.email, labels: [], messages: [], error: message }, { status: 502 });
+    return NextResponse.json(
+      { connected: true, account: account.email, labels: [], messages: [], error: message },
+      { status: 502 },
+    );
   }
 }
