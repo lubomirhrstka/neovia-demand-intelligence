@@ -6,6 +6,25 @@ import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
+const SEZNAM_EMAIL_DOMAINS = ["seznam.cz", "email.cz", "post.cz"];
+
+function isSupportedSeznamEmail(email: string) {
+  const normalized = email.toLowerCase();
+  return SEZNAM_EMAIL_DOMAINS.some((domain) => normalized.endsWith(`@${domain}`));
+}
+
+function formatSeznamLoginError(error: unknown) {
+  const rawMessage = error instanceof Error ? error.message : "";
+  const message = rawMessage.toLowerCase();
+  if (message.includes("authentication") || message.includes("auth") || message.includes("login") || message.includes("credential")) {
+    return "Seznam.cz přihlášení odmítl. Zadejte celý e-mail u seznam.cz/email.cz/post.cz a použijte aplikační heslo ze Seznam účtu, ne běžné heslo ani Gmail heslo.";
+  }
+  if (message.includes("timeout") || message.includes("timed out") || message.includes("network") || message.includes("enotfound")) {
+    return "Nepodařilo se spojit se Seznam IMAP serverem. Zkuste to prosím znovu a ověřte, že je pro schránku povolený IMAP přístup.";
+  }
+  return "Připojení přes IMAP se nepodařilo. Zkontrolujte prosím e-mail, aplikační heslo a zapnutý IMAP ve schránce Seznam.cz.";
+}
+
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
@@ -15,12 +34,20 @@ export async function POST(request: Request) {
   if (!email || !password) {
     return NextResponse.json({ error: "Zadejte e-mail i heslo (u seznam.cz doporučujeme aplikační heslo)." }, { status: 400 });
   }
+  if (!isSupportedSeznamEmail(email)) {
+    return NextResponse.json(
+      {
+        error:
+          "Tento konektor je pouze pro schránky seznam.cz, email.cz nebo post.cz. Gmail připojte přes Gmail konektor v e-mailovém klientu.",
+      },
+      { status: 400 },
+    );
+  }
 
   try {
     await testSeznamImapLogin(email, password);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Přihlášení k seznam.cz selhalo.";
-    return NextResponse.json({ error: `Nepodařilo se přihlásit: ${message}` }, { status: 400 });
+    return NextResponse.json({ error: formatSeznamLoginError(error) }, { status: 400 });
   }
 
   const db = getDb();

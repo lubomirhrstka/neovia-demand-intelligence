@@ -6205,6 +6205,7 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
   );
 }
 function SeznamImapSettings({ note }: { note: (s: string) => void }) {
+  const seznamDomains = ["seznam.cz", "email.cz", "post.cz"];
   const [status, setStatus] = useState<{ connected: boolean; email: string | null; lastSyncAt: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [sinceDays, setSinceDays] = useState(() =>
@@ -6228,6 +6229,10 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
     const password = passwordRef.current?.value || "";
     if (!email || !password) {
       note("Zadejte e-mail i heslo.");
+      return;
+    }
+    if (!seznamDomains.some((domain) => email.toLowerCase().endsWith(`@${domain}`))) {
+      note("Sem patří pouze Seznam schránka: @seznam.cz, @email.cz nebo @post.cz. Gmail už se připojuje přes Gmail konektor.");
       return;
     }
     setBusy(true);
@@ -6257,8 +6262,8 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
     <section className="panel setting-card">
       <h2>seznam.cz e-mail (IMAP)</h2>
       <p>
-        Pro vytěžování LinkedIn job alertů, které chodí na seznam.cz. Doporučujeme v nastavení seznam.cz
-        vytvořit samostatné aplikační heslo místo hlavního hesla k účtu.
+        Pro vytěžování LinkedIn job alertů, které chodí na seznam.cz, email.cz nebo post.cz. Gmail se připojuje
+        samostatně přes Gmail konektor. Doporučujeme v nastavení Seznamu vytvořit aplikační heslo místo hlavního hesla.
       </p>
       <div className={status?.connected ? "email-status-card connected" : "email-status-card"}>
         <span className="source-tag">{status?.connected ? "PŘIPOJENO" : "PŘIPRAVENO"}</span>
@@ -6292,7 +6297,7 @@ function SeznamImapSettings({ note }: { note: (s: string) => void }) {
         <div className="form-grid">
           <label>
             E-mail
-            <input ref={emailRef} defaultValue="" placeholder="hrstka@seznam.cz" autoComplete="username" />
+            <input ref={emailRef} defaultValue="" placeholder="např. hrstka@seznam.cz" autoComplete="username" />
           </label>
           <label>
             Heslo (aplikační)
