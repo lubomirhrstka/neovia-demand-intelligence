@@ -3751,6 +3751,30 @@ button.metric:hover {
   color: #607879;
   line-height: 1.45;
 }
+.email-account-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d7e8e6;
+  border-radius: 12px;
+  background: #eef7f5;
+  margin-top: 4px;
+}
+.email-account-switch button {
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #405d5f;
+  font-weight: 900;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.email-account-switch button.active {
+  background: #0b8275;
+  color: white;
+  box-shadow: 0 8px 18px rgba(7, 88, 80, 0.16);
+}
 .pending-tag {
   background: #fff3d6;
   color: #7a5800;
@@ -4108,6 +4132,18 @@ button.metric:hover {
 }
 .email-row-main:hover {
   background: transparent;
+}
+.email-attachment-static {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7e8e6;
+  border-radius: 10px;
+  color: #183032;
+}
+.email-attachment-static small {
+  color: #607879;
 }
 .connect-mail-button {
   display: none !important;

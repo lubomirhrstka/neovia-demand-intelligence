@@ -1263,6 +1263,7 @@ function Dashboard({
 }
 function EmailClient({ note }: { note: (s: string) => void }) {
   const [folder, setFolder] = useState("inbox");
+  const [mailAccount, setMailAccount] = useState<"gmail" | "seznam">("gmail");
   const [status, setStatus] = useState<{
     configured: boolean;
     connected: boolean;
@@ -1272,6 +1273,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     mode: string;
     redirectUri: string;
   } | null>(null);
+  const [seznamStatus, setSeznamStatus] = useState<{ connected: boolean; email: string | null; lastSyncAt: string | null } | null>(null);
   const [mailData, setMailData] = useState<{
     connected: boolean;
     account?: string;
@@ -1290,6 +1292,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     body: string;
     attachments?: { id: string; filename: string; mimeType: string; size: number }[];
     labels: string[];
+    sourceAccount?: "gmail" | "seznam";
   } | null>(null);
   const [emailMatch, setEmailMatch] = useState<{
     id: string;
@@ -1320,17 +1323,24 @@ function EmailClient({ note }: { note: (s: string) => void }) {
   >([]);
   const [followupsLoading, setFollowupsLoading] = useState(false);
   useEffect(() => {
-    if (!status?.connected) return;
+    if (!status?.connected || mailAccount !== "gmail") return;
     setFollowupsLoading(true);
     fetch("/api/email/gmail/followups")
       .then((r) => r.json())
       .then((data) => setRealFollowups(data.items || []))
       .catch(() => setRealFollowups([]))
       .finally(() => setFollowupsLoading(false));
-  }, [status?.connected]);
+  }, [status?.connected, mailAccount]);
   useEffect(() => {
     setSelectedIds([]);
-  }, [folder]);
+  }, [folder, mailAccount]);
+  useEffect(() => {
+    setFolder("inbox");
+    setMailData(null);
+    setSelectedEmail(null);
+    setEmailMatch(null);
+    setContactCandidate(null);
+  }, [mailAccount]);
   useEffect(() => {
     try {
       setLocalDrafts(JSON.parse(window.localStorage.getItem("neovia-email-drafts") || "[]"));
@@ -1395,30 +1405,41 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       source: `Follow-up · ${item.subject}`,
     },
   }));
-  const folders = [
-    { id: "inbox", label: "Doručené", count: countFor("INBOX") },
-    { id: "sent", label: "Odeslané", count: countFor("SENT") },
-    { id: "drafts", label: "Koncepty", count: countFor("DRAFT") },
-    { id: "review", label: "Ke kontrole", count: reviewItems.length },
-    { id: "followups", label: "Follow-upy", count: followupItems.length },
-    { id: "archive", label: "Archiv", count: countFor("CATEGORY_PERSONAL") },
-    { id: "trash", label: "Koš", count: countFor("TRASH") },
-  ];
+  const folders = mailAccount === "gmail"
+    ? [
+        { id: "inbox", label: "Doručené", count: countFor("INBOX") },
+        { id: "sent", label: "Odeslané", count: countFor("SENT") },
+        { id: "drafts", label: "Koncepty", count: countFor("DRAFT") },
+        { id: "review", label: "Ke kontrole", count: reviewItems.length },
+        { id: "followups", label: "Follow-upy", count: followupItems.length },
+        { id: "archive", label: "Archiv", count: countFor("CATEGORY_PERSONAL") },
+        { id: "trash", label: "Koš", count: countFor("TRASH") },
+      ]
+    : [
+        { id: "inbox", label: "Doručené", count: countFor("INBOX") },
+      ];
   useEffect(() => {
     fetch("/api/email/gmail/status")
       .then((response) => (response.ok ? response.json() : null))
       .then(setStatus)
       .catch(() => setStatus(null));
+    fetch("/api/email/seznam/status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setSeznamStatus)
+      .catch(() => setSeznamStatus(null));
   }, []);
   useEffect(() => {
-    if (!status?.connected || ["review", "followups"].includes(folder)) return;
+    if (["review", "followups"].includes(folder)) return;
+    if (mailAccount === "gmail" && !status?.connected) return;
+    if (mailAccount === "seznam" && !seznamStatus?.connected) return;
     setMailLoading(true);
-    fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`)
+    const endpoint = mailAccount === "gmail" ? "/api/email/gmail/folders" : "/api/email/seznam/folders";
+    fetch(`${endpoint}?folder=${encodeURIComponent(folder)}`)
       .then((response) => (response.ok ? response.json() : response.json().catch(() => null)))
       .then((data) => setMailData(data))
       .catch(() => setMailData((current) => current ? { ...current, error: "Poštu se nepodařilo načíst." } : null))
       .finally(() => setMailLoading(false));
-  }, [folder, status?.connected]);
+  }, [folder, status?.connected, seznamStatus?.connected, mailAccount]);
   const selectedFolder = folders.find((item) => item.id === folder) || folders[0];
   const sampleQueue = (folder === "followups" ? followupItems : reviewItems).filter((item) => `${item.subject} ${item.contact} ${item.company}`.toLowerCase().includes(search.toLowerCase()));
   const filteredMessages = (mailData?.messages || []).filter((item) =>
@@ -1450,10 +1471,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     setEmailMatch(null);
     setContactCandidate(null);
     try {
-      const detailResponse = await fetch(`/api/email/gmail/messages/${encodeURIComponent(item.id)}`);
+      const detailEndpoint = mailAccount === "gmail" ? "/api/email/gmail/messages" : "/api/email/seznam/messages";
+      const detailResponse = await fetch(`${detailEndpoint}/${encodeURIComponent(item.id)}`);
       const detail = await detailResponse.json();
       if (!detailResponse.ok) throw new Error(detail.error || "Detail e-mailu se nepodařilo načíst.");
-      setSelectedEmail(detail);
+      setSelectedEmail({ ...detail, sourceAccount: mailAccount });
       if (detail.fromEmail || detail.from || detail.body) {
         const params = new URLSearchParams({
           email: detail.fromEmail || "",
@@ -1506,7 +1528,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
           role: "",
           email: contactCandidate.email,
           phone: contactCandidate.phone,
-          source: "Gmail",
+          source: selectedEmail?.sourceAccount === "seznam" ? "Seznam e-mail" : "Gmail",
           verified: true,
         }),
       });
@@ -1639,6 +1661,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
         clearSelection();
         return;
       }
+      if (mailAccount === "seznam") {
+        note("Mazání Seznam e-mailů z aplikace zatím není zapnuté. Zprávy se jen bezpečně zobrazují přes IMAP.");
+        clearSelection();
+        return;
+      }
       const response = await fetch("/api/email/gmail/messages", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -1670,11 +1697,45 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       <section className="email-client">
         <aside className="email-folders panel">
           <div className="email-account">
-            <span className={status?.connected ? "source-tag" : status?.configured ? "source-tag pending-tag" : "source-tag pending-tag"}>
-              {status?.connected ? "PŘIPOJENO" : status?.configured ? "OAUTH PŘIPRAVEN" : "ČEKÁ NA OAUTH"}
+            <span className={
+              mailAccount === "gmail"
+                ? status?.connected
+                  ? "source-tag"
+                  : status?.configured
+                    ? "source-tag pending-tag"
+                    : "source-tag pending-tag"
+                : seznamStatus?.connected
+                  ? "source-tag"
+                  : "source-tag pending-tag"
+            }>
+              {mailAccount === "gmail"
+                ? status?.connected
+                  ? "PŘIPOJENO"
+                  : status?.configured
+                    ? "OAUTH PŘIPRAVEN"
+                    : "ČEKÁ NA OAUTH"
+                : seznamStatus?.connected
+                  ? "PŘIPOJENO"
+                  : "ČEKÁ NA IMAP"}
             </span>
-            <b>{status?.account || "Gmail účet"}</b>
-            <small>{status?.mode || "Načítám stav připojení..."}</small>
+            <b>{mailAccount === "gmail" ? status?.account || "Gmail účet" : seznamStatus?.email || "Seznam.cz účet"}</b>
+            <small>
+              {mailAccount === "gmail"
+                ? status?.mode || "Načítám stav připojení..."
+                : seznamStatus?.connected
+                  ? seznamStatus.lastSyncAt
+                    ? `IMAP připojeno · poslední čtení ${new Date(seznamStatus.lastSyncAt).toLocaleString("cs-CZ")}`
+                    : "IMAP připojeno · zatím bez čtení"
+                  : "Připojte schránku v Nastavení"}
+            </small>
+            <div className="email-account-switch" role="tablist" aria-label="Výběr e-mailového účtu">
+              <button type="button" className={mailAccount === "gmail" ? "active" : ""} onClick={() => setMailAccount("gmail")}>
+                Gmail
+              </button>
+              <button type="button" className={mailAccount === "seznam" ? "active" : ""} onClick={() => setMailAccount("seznam")}>
+                Seznam
+              </button>
+            </div>
           </div>
           {folders.map((item) => (
             <button
@@ -1716,7 +1777,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               Nový e-mail
             </button>
           </div>
-          {!status?.configured && (
+          {mailAccount === "gmail" && !status?.configured && (
             <div className="email-setup-warning">
               <CircleAlert size={18} />
               <div>
@@ -1727,7 +1788,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               </div>
             </div>
           )}
-          {status?.configured && !status.connected && (
+          {mailAccount === "gmail" && status?.configured && !status.connected && (
             <div className="email-setup-warning">
               <CircleAlert size={18} />
               <div>
@@ -1736,18 +1797,27 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               </div>
             </div>
           )}
+          {mailAccount === "seznam" && !seznamStatus?.connected && (
+            <div className="email-setup-warning">
+              <CircleAlert size={18} />
+              <div>
+                <b>Seznam.cz IMAP účet zatím není připojený.</b>
+                <small>Připojte ho v Nastavení. Poté zde uvidíte doručené zprávy ze Seznamu/Email.cz/Post.cz.</small>
+              </div>
+            </div>
+          )}
           {mailData?.error && (
             <div className="email-setup-warning">
               <CircleAlert size={18} />
               <div>
-                <b>Gmail odpověděl chybou.</b>
+                <b>{mailAccount === "gmail" ? "Gmail odpověděl chybou." : "Seznam IMAP odpověděl chybou."}</b>
                 <small>{mailData.error}</small>
               </div>
             </div>
           )}
           <div className="email-list">
-            {mailLoading && <div className="empty-state">Načítám zprávy z Gmailu…</div>}
-            {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && filteredMessages.map((item) => (
+            {mailLoading && <div className="empty-state">Načítám zprávy z {mailAccount === "gmail" ? "Gmailu" : "Seznamu"}…</div>}
+            {!mailLoading && (mailAccount === "gmail" ? status?.connected : seznamStatus?.connected) && !["review", "followups"].includes(folder) && filteredMessages.map((item) => (
               <div key={item.id} className={`email-row ${selectedIds.includes(item.id) ? "selected" : ""}`}>
                 <label className="email-select" onClick={(e) => e.stopPropagation()}>
                   <input
@@ -1761,16 +1831,16 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                   <div>
                     <b>{item.subject}</b>
                     <small>{item.from} · {item.fromEmail || item.date}</small>
-                    <small>{item.snippet}</small>
+                  <small>{item.snippet}</small>
                   </div>
-                  <span className="source-tag">{item.labels?.includes("UNREAD") ? "Nepřečteno" : "Gmail"}</span>
+                  <span className="source-tag">{item.labels?.includes("UNREAD") ? "Nepřečteno" : mailAccount === "gmail" ? "Gmail" : "Seznam"}</span>
                 </button>
               </div>
             ))}
-            {!mailLoading && status?.connected && !["review", "followups"].includes(folder) && !filteredMessages.length && (
+            {!mailLoading && (mailAccount === "gmail" ? status?.connected : seznamStatus?.connected) && !["review", "followups"].includes(folder) && !filteredMessages.length && (
               <div className="empty-state">V této složce není žádná zpráva odpovídající filtru.</div>
             )}
-            {(!status?.connected || ["review", "followups"].includes(folder)) && sampleQueue.map((item) => {
+            {(mailAccount === "gmail" && (!status?.connected || ["review", "followups"].includes(folder))) && sampleQueue.map((item) => {
               const rowId = String(item.id || item.subject);
               return (
               <div key={rowId + item.state} className={`email-row ${selectedIds.includes(rowId) ? "selected" : ""}`}>
@@ -1812,11 +1882,21 @@ function EmailClient({ note }: { note: (s: string) => void }) {
             );})}
           </div>
           <div className="email-rules">
-            <b>Gmail API funkce</b>
-            <span>Načítá Doručené, Odeslané, Koncepty, Archiv a Koš po připojení účtu.</span>
-            <span>Párovat zprávy podle e-mailu na kontaktní a firemní kartu.</span>
-            <span>Vytěžovat podpis, telefon, roli, firmu, další krok a odpověď.</span>
-            <span>Odesílat pouze po ruční kontrole nebo potvrzení dávky.</span>
+            <b>{mailAccount === "gmail" ? "Gmail API funkce" : "Seznam IMAP funkce"}</b>
+            {mailAccount === "gmail" ? (
+              <>
+                <span>Načítá Doručené, Odeslané, Koncepty, Archiv a Koš po připojení účtu.</span>
+                <span>Párovat zprávy podle e-mailu na kontaktní a firemní kartu.</span>
+                <span>Vytěžovat podpis, telefon, roli, firmu, další krok a odpověď.</span>
+                <span>Odesílat pouze po ruční kontrole nebo potvrzení dávky.</span>
+              </>
+            ) : (
+              <>
+                <span>Zobrazuje doručené zprávy z připojené schránky přes IMAP.</span>
+                <span>LinkedIn alerty ze Seznamu lze následně vytěžit v sekci Zdroje.</span>
+                <span>Odesílání a mazání přes Seznam zatím není zapnuté — Gmail zůstává odesílací účet.</span>
+              </>
+            )}
           </div>
         </section>
       </section>
@@ -1825,7 +1905,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
           <div className="modal email-detail-modal">
             <header>
               <div>
-                <p>GMAIL · DETAIL ZPRÁVY</p>
+                <p>{selectedEmail?.sourceAccount === "seznam" ? "SEZNAM · DETAIL ZPRÁVY" : "GMAIL · DETAIL ZPRÁVY"}</p>
                 <h2>{selectedEmail?.subject || "Načítám e-mail…"}</h2>
               </div>
               <button type="button" onClick={() => {
@@ -1893,7 +1973,11 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                   {Boolean(selectedEmail.attachments?.length) && (
                     <div className="email-attachments">
                       <b>Přílohy</b>
-                      {selectedEmail.attachments?.map((file) => (
+                      {selectedEmail.attachments?.map((file) => selectedEmail.sourceAccount === "seznam" ? (
+                        <span key={file.id} className="email-attachment-static">
+                          {file.filename} <small>{Math.ceil((file.size || 0) / 1024)} KB</small>
+                        </span>
+                      ) : (
                         <a
                           key={file.id}
                           href={`/api/email/gmail/messages/${encodeURIComponent(selectedEmail.id)}/attachments/${encodeURIComponent(file.id)}?filename=${encodeURIComponent(file.filename)}`}
