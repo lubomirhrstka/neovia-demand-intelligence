@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   Mail,
   MoreHorizontal,
+  Menu,
   Phone,
   Plus,
   Search,
@@ -88,6 +89,7 @@ export default function Home() {
   const { data: session, isPending } = authClient.useSession();
   const { stalled } = useStalledOpportunities();
   const [view, setView] = useState<View>("Přehled"),
+    [mobileNavOpen, setMobileNavOpen] = useState(false),
     [focus, setFocus] = useState(""),
     [query, setQuery] = useState(""),
     [onlyFocus, setOnlyFocus] = useState(false),
@@ -144,7 +146,26 @@ export default function Home() {
   if (!session) return <AuthScreen />;
   return (
     <main className="app-shell">
-      <aside className="sidebar">
+      <button
+        type="button"
+        className="mobile-nav-toggle"
+        aria-label="Otevřít menu"
+        onClick={() => setMobileNavOpen(true)}
+      >
+        <Menu size={20} />
+      </button>
+      {mobileNavOpen && (
+        <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />
+      )}
+      <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
+        <button
+          type="button"
+          className="mobile-nav-close"
+          aria-label="Zavřít menu"
+          onClick={() => setMobileNavOpen(false)}
+        >
+          ×
+        </button>
         <div className="brand">
           <div>LH</div>
           <span>LEADHUNTER</span>
@@ -163,7 +184,10 @@ export default function Home() {
             <button
               key={label}
               className={view === label ? "nav active" : "nav"}
-              onClick={() => goTo(label)}
+              onClick={() => {
+                goTo(label);
+                setMobileNavOpen(false);
+              }}
             >
               <Icon size={18} />
               {label}
@@ -173,7 +197,10 @@ export default function Home() {
         <div className="bottom">
           <button
             className={view === "Nastavení" ? "nav active" : "nav"}
-            onClick={() => goTo("Nastavení")}
+            onClick={() => {
+              goTo("Nastavení");
+              setMobileNavOpen(false);
+            }}
           >
             <Settings size={18} />
             Nastavení
