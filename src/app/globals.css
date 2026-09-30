@@ -4424,3 +4424,53 @@ button.metric:hover {
 .theme-swatch i {
   flex: 1;
 }
+
+/* ===== Mobilní úpravy (iPhone a menší telefony) — doplňuje původní řídké @media pravidla ===== */
+@media (max-width: 860px) {
+  .crm-summary,
+  .source-grid,
+  .mapping-grid,
+  .pool,
+  .email-detail-meta {
+    grid-template-columns: 1fr;
+  }
+  .import-summary,
+  .metrics,
+  .crm-kpis,
+  .relation-strip,
+  .radar-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pipeline {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(78vw, 300px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 6px;
+  }
+  .pipeline > div {
+    scroll-snap-align: start;
+  }
+  .pipeline-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .detail-meta-grouped {
+    grid-template-columns: 1fr;
+  }
+  /* Bezpečná zóna spodní lišty a notch na iPhonu */
+  .page {
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (max-width: 480px) {
+  .import-summary,
+  .metrics,
+  .crm-kpis,
+  .relation-strip,
+  .radar-grid,
+  .pipeline-summary {
+    grid-template-columns: 1fr;
+  }
+}
