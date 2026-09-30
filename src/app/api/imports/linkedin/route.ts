@@ -4,6 +4,7 @@ import { sameCompanyIdentity } from "@/lib/matching";
 import { getFreshGmailAccount, gmailFetch } from "@/lib/gmail";
 import { fetchLinkedInFromSeznam, getSeznamImapAccount } from "@/lib/seznam-imap";
 import { verifyCompanyWeb } from "@/lib/company-web-verify";
+import { enrichLinkedInJobs } from "@/lib/linkedin-job-enrich";
 import { companies, connectorSources, demands, importRuns, monitorSettings, emailAccounts } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -61,7 +62,7 @@ const stripTags = (html: string) =>
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
+    .replace(/&/g, "&")
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/g, "'")
     .replace(/\s+/g, " ")
@@ -84,7 +85,7 @@ function parseLinkedInJobs(html: string): ParsedJob[] {
   while ((match = linkPattern.exec(html))) {
     const title = stripTags(match[3]);
     if (title.length < 3) continue;
-    matches.push({ href: match[1].replace(/&amp;/g, "&"), id: match[2], title, index: match.index });
+    matches.push({ href: match[1].replace(/&/g, "&"), id: match[2], title, index: match.index });
   }
   const jobs: ParsedJob[] = [];
   const seenIds = new Set<string>();
@@ -177,15 +178,17 @@ function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""
   const lines = normalized
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !/^(od|komu|datum|předmět|-----|linkedin|snadná žádost|1 spojení)$/i.test(line));
+    .filter(Boolean);
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const colonMatch = line.match(/^(.{2,120}?):\s*(.{3,220})(?:\s+[–-]\s+(.{2,160}))?$/);
-    if (colonMatch) {
-      const company = colonMatch[1].trim();
+    if (line.length < 4 || line.length > 220) continue;
+    if (/^(od|komu|datum|předmět|before|after):/i.test(line)) continue;
+
+    const colonMatch = line.match(/^(.+?)\s*:\s*(.+?)(?:\s*[·|]\s*(.+))?$/);
+    if (colonMatch && colonMatch[1].length > 2 && colonMatch[2].length > 2) {
       const title = colonMatch[2].trim();
+      const company = colonMatch[1].trim();
       if (!/^(od|komu|datum|předmět)$/i.test(company) && !company.includes("@")) {
         add(title, company, colonMatch[3] || "", lines.slice(Math.max(0, i - 2), i + 4).join("\n"));
       }
@@ -243,68 +246,86 @@ export async function POST(request: Request) {
   const source =
     existingSource ||
     (
-      await db.insert(connectorSources).values({
-        key: "linkedin",
-        name: "LinkedIn, e-mailové alerty",
-        kind: "email",
-        status: "active",
-        createdById: session.user.id,
-      }).returning()
+      await db
+        .insert(connectorSources)
+        .values({
+          key: "linkedin",
+          name: "LinkedIn, e-mailové alerty",
+          kind: "email",
+          status: "active",
+          ownerId: session.user.id,
+        })
+        .returning()
     )[0];
-  const [run] = await db.insert(importRuns).values({
-    sourceId: source.id,
-    status: "queued",
-    startedAt: new Date(),
-    triggeredById: session.user.id,
-  }).returning();
 
-  const [settings] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
-  const keywords = settings?.keywords?.length ? settings.keywords : ["IT Security", "Cybersecurity", "Security Officer", "NIS2", "GDPR", "Incident Response", "SOC Manager"];
+  const [settings] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).limit(1);
+  const keywords = (settings?.keywords || "")
+    .split(/[,;\n]/)
+    .map((k) => k.trim())
+    .filter(Boolean);
 
-  let found = 0, created = 0, updated = 0, skipped = 0, webVerified = 0;
+  const [run] = await db
+    .insert(importRuns)
+    .values({
+      sourceId: source.id,
+      status: "running",
+      ownerId: session.user.id,
+    })
+    .returning();
+
+  let found = 0;
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  let webVerified = 0;
   const warnings: string[] = [];
+  const MAX_AUTO_VERIFY = 6;
+
   const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
-  const MAX_AUTO_VERIFY = 6; // rozpočet na import — ověření webu stojí několik requestů, nechceme import protáhnout na minuty
 
   const saveJob = async (job: ParsedJob) => {
     found += 1;
-    const externalId = `linkedin:${job.externalId}`;
-    const [existingDemand] = await db.select({ id: demands.id }).from(demands).where(and(eq(demands.ownerId, session.user.id), eq(demands.externalId, externalId))).limit(1);
-    if (existingDemand) {
+    const existing = await db
+      .select()
+      .from(demands)
+      .where(and(eq(demands.ownerId, session.user.id), eq(demands.externalId, job.externalId)))
+      .limit(1);
+    if (existing[0]) {
       skipped += 1;
       return;
     }
+
     const companyName = normalizeCompanyNameSafe(job.company);
     let companyRecord = allCompanies.find((c) => sameCompanyIdentity(c, { name: companyName }).same);
     let isNewCompany = false;
     if (!companyRecord) {
-      const [createdCompany] = await db.insert(companies).values({
-        name: companyName,
-        source: "LinkedIn",
-        ownerId: session.user.id,
-      }).returning();
+      const [createdCompany] = await db
+        .insert(companies)
+        .values({
+          name: companyName,
+          ownerId: session.user.id,
+        })
+        .returning();
       companyRecord = createdCompany;
       allCompanies.push(createdCompany);
       isNewCompany = true;
     }
+
     await db.insert(demands).values({
-      externalId,
+      ownerId: session.user.id,
+      sourceId: source.id,
+      externalId: job.externalId,
       title: job.title,
-      source: "LinkedIn",
-      sourceUrl: job.url || null,
-      role: job.title,
       location: job.location || null,
       demandText: job.detail || `${job.title} — ${companyName}${job.location ? ` · ${job.location}` : ""}`,
       relevanceScore: relevanceFor(`${job.title} ${job.location} ${job.detail || ""}`, keywords),
       companyId: companyRecord.id,
-      ownerId: session.user.id,
+      sourceUrl: job.url || null,
+      status: "new",
     });
     created += 1;
 
-    // Automatické ověření firemního webu — jen pro nové, dosud neznámé firmy a jen do rozpočtu
-    // MAX_AUTO_VERIFY na jeden import (stejná logika jako ruční tlačítko "Ověřit web a kontakty").
     if (isNewCompany && companyName !== "Firma neuvedena (LinkedIn)" && webVerified < MAX_AUTO_VERIFY) {
-      webVerified += 1;
       try {
         await verifyCompanyWeb({
           ownerId: session.user.id,
@@ -312,14 +333,10 @@ export async function POST(request: Request) {
           companyName,
           companyWebsite: companyRecord.website,
           companyNote: companyRecord.note,
-          demandTitle: job.title,
-          demandText: job.detail || null,
-          demandSourceUrl: job.url || null,
-          maxUrls: 6,
-          timeoutMs: 4000,
         });
+        webVerified += 1;
       } catch {
-        // ověření je "best effort" — nikdy nesmí shodit import
+        /* non-blocking */
       }
     }
   };
@@ -331,20 +348,24 @@ export async function POST(request: Request) {
         const message = await gmailFetch<GmailMessage>(account.accessToken, `/messages/${item.id}?format=full`);
         const subject = getHeader(message, "Subject");
         const html = htmlFromPart(message.payload);
-        const text = textFromPart(message.payload) || message.snippet || "";
-        if (!html && !text && !subject) continue;
+        const text = textFromPart(message.payload);
         const jobs = [
           ...parseLinkedInJobs(html),
           ...parseLinkedInJobsFromText(`${subject}\n${text}`, message.id, subject),
-        ].filter((job, index, all) =>
-          all.findIndex((candidate) =>
-            candidate.externalId === job.externalId ||
-            (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
-          ) === index,
+        ].filter(
+          (job, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.externalId === job.externalId ||
+                `${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase(),
+            ) === index,
         );
-        for (const job of jobs) await saveJob(job);
+        const { jobs: enrichedJobs, enriched } = await enrichLinkedInJobs(jobs, { limit: 15, concurrency: 3 });
+        if (enriched) warnings.push(`LinkedIn metadata doplněna z veřejné stránky pozice: ${enriched}`);
+        for (const job of enrichedJobs) await saveJob(job);
       }
-      if (!messages.length) warnings.push(`V Gmailu nebyly nalezeny LinkedIn alerty ani přeposlané zprávy za posledních ${sinceDays} dní.`);
+      if (!messages.length)
+        warnings.push(`V Gmailu nebyly nalezeny LinkedIn alerty ani přeposlané zprávy za posledních ${sinceDays} dní.`);
     } catch (error) {
       warnings.push(`Gmail: ${error instanceof Error ? error.message : "LinkedIn import selhal."}`);
     }
@@ -356,14 +377,22 @@ export async function POST(request: Request) {
       for (const message of seznamMessages) {
         const jobs = [
           ...parseLinkedInJobs(message.html),
-          ...parseLinkedInJobsFromText(`${message.subject}\n${message.text}`, `seznam:${message.subject}:${message.text.slice(0, 40)}`, message.subject),
-        ].filter((job, index, all) =>
-          all.findIndex((candidate) =>
-            candidate.externalId === job.externalId ||
-            (`${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase())
-          ) === index,
+          ...parseLinkedInJobsFromText(
+            `${message.subject}\n${message.text}`,
+            `seznam:${message.subject}:${message.text.slice(0, 40)}`,
+            message.subject,
+          ),
+        ].filter(
+          (job, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.externalId === job.externalId ||
+                `${candidate.title}|${candidate.company}`.toLowerCase() === `${job.title}|${job.company}`.toLowerCase(),
+            ) === index,
         );
-        for (const job of jobs) await saveJob(job);
+        const { jobs: enrichedJobs, enriched } = await enrichLinkedInJobs(jobs, { limit: 15, concurrency: 3 });
+        if (enriched) warnings.push(`LinkedIn metadata (Seznam) doplněna z veřejné stránky: ${enriched}`);
+        for (const job of enrichedJobs) await saveJob(job);
       }
       await db.update(emailAccounts).set({ lastSyncAt: new Date() }).where(eq(emailAccounts.id, seznamAccount.id));
       if (!seznamMessages.length) warnings.push(`Na seznam.cz nebyly nalezeny LinkedIn alerty za posledních ${sinceDays} dní.`);
@@ -374,15 +403,18 @@ export async function POST(request: Request) {
 
   if (found === 0 && !warnings.length) warnings.push("LinkedIn e-maily byly nalezeny, ale nepodařilo se z nich vytěžit žádnou pozici.");
 
-  await db.update(importRuns).set({
-    status: warnings.length ? "completed_with_warnings" : "completed",
-    completedAt: new Date(),
-    receivedCount: found,
-    createdCount: created,
-    updatedCount: updated,
-    skippedCount: skipped,
-    errorSummary: warnings.length ? JSON.stringify({ warnings }) : null,
-  }).where(eq(importRuns.id, run.id));
+  await db
+    .update(importRuns)
+    .set({
+      status: warnings.length ? "completed_with_warnings" : "completed",
+      completedAt: new Date(),
+      receivedCount: found,
+      createdCount: created,
+      updatedCount: updated,
+      skippedCount: skipped,
+      errorSummary: warnings.length ? JSON.stringify({ warnings }) : null,
+    })
+    .where(eq(importRuns.id, run.id));
 
   return NextResponse.json({ found, created, updated, skipped, webVerified, warnings });
 }
