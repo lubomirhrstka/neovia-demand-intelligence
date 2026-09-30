@@ -359,11 +359,34 @@
 .demand-detail {
   width: min(760px, 100%);
 }
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 23px;
+  border-bottom: 1px solid #edf1f0;
+  flex: 0 0 auto;
+}
+.detail-tabs button {
+  border: 0;
+  background: none;
+  padding: 11px 14px;
+  font: 700 11px Manrope;
+  color: #81999a;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.detail-tabs button.active {
+  color: #0c8175;
+  border-bottom-color: #0c8175;
+}
+.detail-tabs button:hover:not(.active) {
+  color: #22383a;
+}
 .detail-meta {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 18px 23px;
+  gap: 10px;  padding: 18px 23px;
   background: #f6f9f8;
 }
 .detail-meta span {

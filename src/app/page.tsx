@@ -2481,8 +2481,12 @@ function Demands({
     [selectedDemandIds, setSelectedDemandIds] = useState<string[]>([]),
     [verifyingDemandId, setVerifyingDemandId] = useState<string | null>(null),
     [selected, setSelected] = useState<ImportedDemand | null>(null),
+    [detailTab, setDetailTab] = useState<"overview" | "actions" | "listing" | "outreach">("overview"),
     [companyDetail, setCompanyDetail] = useState<ImportedDemand | null>(null),
     [contactDetail, setContactDetail] = useState<ImportedDemand | null>(null);
+  useEffect(() => {
+    if (selected) setDetailTab("overview");
+  }, [selected?.id]);
   useEffect(() => {
     const stored = window.localStorage.getItem("neovia-demand-search-history");
     if (stored) setSearchHistory(JSON.parse(stored));
@@ -3146,6 +3150,23 @@ function Demands({
                 <button onClick={() => setSelected(null)}>×</button>
               </div>
             </header>
+            <div className="modal-scroll">
+            <nav className="detail-tabs">
+              <button type="button" className={detailTab === "overview" ? "active" : ""} onClick={() => setDetailTab("overview")}>
+                Přehled
+              </button>
+              <button type="button" className={detailTab === "actions" ? "active" : ""} onClick={() => setDetailTab("actions")}>
+                Akce
+              </button>
+              <button type="button" className={detailTab === "listing" ? "active" : ""} onClick={() => setDetailTab("listing")}>
+                Inzerce
+              </button>
+              <button type="button" className={detailTab === "outreach" ? "active" : ""} onClick={() => setDetailTab("outreach")}>
+                Cold e-mail{selected.source.toLowerCase().includes("linkedin") ? " a CV" : ""}
+              </button>
+            </nav>
+            {detailTab === "overview" && (
+            <>
             <section className="sales-intel-card intel-score-first">
               <div>
                 <span>OBCHODNÍ SKÓRE</span>
@@ -3212,6 +3233,21 @@ function Demands({
                 {hasFullDemandText(selected) ? "Plné znění uloženo" : "Detail je potřeba ověřit u zdroje"}
               </span>
             </p>
+            <section className="qualification-panel">
+              <h3>Kvalifikační checklist</h3>
+              <div>
+                {qualificationItems(selected).map((item) => (
+                  <span className={item.done ? "done" : ""} key={item.label}>
+                    {item.done ? <Check size={14} /> : <CircleAlert size={14} />}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </section>
+            </>
+            )}
+            {detailTab === "actions" && (
+            <>
             <section className="demand-source-panel">
               <div>
                 <span>ZDROJE A OVĚŘENÍ</span>
@@ -3247,17 +3283,6 @@ function Demands({
                 </button>
               </div>
             </section>
-            <section className="qualification-panel">
-              <h3>Kvalifikační checklist</h3>
-              <div>
-                {qualificationItems(selected).map((item) => (
-                  <span className={item.done ? "done" : ""} key={item.label}>
-                    {item.done ? <Check size={14} /> : <CircleAlert size={14} />}
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-            </section>
             <section className="demand-source-panel next-step-panel">
               <div>
                 <span>DALŠÍ KROK</span>
@@ -3276,6 +3301,29 @@ function Demands({
                 </button>
               </div>
             </section>
+            <div className="demand-action-strip">
+              <span>
+                <b>Další obchodní akce</b>
+                {recommendedNextStep(selected)}. Obchodní případ se založí do Pipeline ve fázi Identifikace.
+              </span>
+              <button type="button" onClick={addToPipeline}>
+                Vytvořit obchodní případ
+              </button>
+            </div>
+            {demandDuplicates(selected, rows).length > 0 && (
+              <div className="duplicate-check">
+                <CircleAlert size={16} />
+                <div>
+                  <b>Možné duplicitní poptávky</b>
+                  <span>
+                    {demandDuplicates(selected, rows).map((item) => `${item.company || "Firma"}: ${item.role || item.title}`).join(" | ")}
+                  </span>
+                </div>
+              </div>
+            )}
+            </>
+            )}
+            {detailTab === "listing" && (
             <article className="detail-text">
               <h3>Kompletní znění inzerce</h3>
               <HighlightedDemandText
@@ -3285,26 +3333,23 @@ function Demands({
                 }
                 keywords={keywordPool(selected)}
               />
-              <div className="demand-action-strip">
-                <span>
-                  <b>Další obchodní akce</b>
-                  {recommendedNextStep(selected)}. Obchodní případ se založí do Pipeline ve fázi Identifikace.
-                </span>
-                <button type="button" onClick={addToPipeline}>
-                  Vytvořit obchodní případ
-                </button>
-              </div>
-              {demandDuplicates(selected, rows).length > 0 && (
-                <div className="duplicate-check">
-                  <CircleAlert size={16} />
-                  <div>
-                    <b>Možné duplicitní poptávky</b>
-                    <span>
-                      {demandDuplicates(selected, rows).map((item) => `${item.company || "Firma"}: ${item.role || item.title}`).join(" | ")}
+              <div className="keyword-pool">
+                <h3>Vytěžené role a štítky</h3>
+                <div>
+                  {rolePool(selected).map((role) => (
+                    <span className="role-tag" key={role}>
+                      {role}
                     </span>
-                  </div>
+                  ))}
+                  {keywordPool(selected).map((keyword) => (
+                    <span key={keyword}>{keyword}</span>
+                  ))}
                 </div>
-              )}
+              </div>
+            </article>
+            )}
+            {detailTab === "outreach" && (
+            <article className="detail-text">
               <div className="outreach-box">
                 <h3>Návrh cold e-mailu</h3>
                 <pre>{outreachDraft(selected)}</pre>
@@ -3344,20 +3389,9 @@ function Demands({
                   </div>
                 </div>
               )}
-              <div className="keyword-pool">
-                <h3>Vytěžené role a štítky</h3>
-                <div>
-                  {rolePool(selected).map((role) => (
-                    <span className="role-tag" key={role}>
-                      {role}
-                    </span>
-                  ))}
-                  {keywordPool(selected).map((keyword) => (
-                    <span key={keyword}>{keyword}</span>
-                  ))}
-                </div>
-              </div>
             </article>
+            )}
+            </div>
           </section>
         </div>
       )}
