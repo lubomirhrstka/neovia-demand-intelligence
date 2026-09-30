@@ -171,7 +171,7 @@ export async function fetchSeznamFolderMessages(email: string, password: string,
       let messagesTotal = 0;
       try {
         const status = await client.status(mailbox, { messages: true });
-        messagesTotal = status.messages || 0;
+        messagesTotal = status ? status.messages || 0 : 0;
       } catch {
         messagesTotal = 0;
       }
@@ -216,7 +216,7 @@ export async function fetchSeznamFolderMessages(email: string, password: string,
           let flags: string[] = [];
           try {
             const fetched = await client.fetchOne(String(uid), { flags: true }, { uid: true });
-            if (fetched?.flags) flags = Array.from(fetched.flags);
+            if (fetched && fetched.flags) flags = Array.from(fetched.flags);
           } catch {
             /* ignore */
           }
@@ -324,17 +324,18 @@ export async function deleteSeznamMessages(
 
     let count = 0;
     for (const [mailbox, uids] of byMailbox) {
+      const numericUids = uids.map(Number);
       const lock = await client.getMailboxLock(mailbox);
       try {
         const permanent = options?.permanent || mailbox.toLowerCase() === trashMailbox.toLowerCase();
         if (permanent) {
-          await client.messageDelete(uids, { uid: true });
+          await client.messageDelete(numericUids, { uid: true });
         } else {
           try {
-            await client.messageMove(uids, trashMailbox, { uid: true });
+            await client.messageMove(numericUids, trashMailbox, { uid: true });
           } catch {
-            await client.messageFlagsAdd(uids, ["\\Deleted"], { uid: true });
-            await client.messageDelete(uids, { uid: true });
+            await client.messageFlagsAdd(numericUids, ["\\Deleted"], { uid: true });
+            await client.messageDelete(numericUids, { uid: true });
           }
         }
         count += uids.length;
