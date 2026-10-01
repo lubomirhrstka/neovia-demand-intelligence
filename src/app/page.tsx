@@ -3060,7 +3060,7 @@ function Demands({
           </button>
         </section>
       )}
-      <section className="panel list">
+      <section className="panel list demand-list">
         <div className="list-head">
           <label className="select-all">
             <input
@@ -3127,8 +3127,11 @@ function Demands({
                   {d.role || d.title}
                 </button>
                 <small>
-                  {d.company || "Nezařazená firma"} · {d.location || "ČR"} ·{" "}
-                  {d.externalId || d.id}
+                  {d.company || "Nezařazená firma"} · {d.location || "ČR"}
+                  <span className="row-ext-id">
+                    {" · "}
+                    {d.externalId || d.id}
+                  </span>
                 </small>
                 <p>
                   {(tags.length ? tags : [d.source]).slice(0, 5).map((t) => (
@@ -3140,7 +3143,7 @@ function Demands({
                 </p>
                 </div>
               </div>
-              <div>
+              <div className="list-contact">
                 <b>{contactName(d)}</b>
                 <small>
                   {new Date(d.importedAt).toLocaleDateString("cs-CZ")}

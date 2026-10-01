@@ -4745,3 +4745,68 @@ button.metric:hover {
     flex: 0 0 auto;
   }
 }
+
+/* ===== Poptávky na telefonu: kartičky místo 4sloupcové tabulky ===== */
+@media (max-width: 720px) {
+  .demand-list .list-head {
+    display: flex;
+    padding: 10px 16px;
+  }
+  .demand-list .list-head > span {
+    display: none;
+  }
+  .demand-list .list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "main  score"
+      "meta  status";
+    gap: 8px 12px;
+    padding: 14px 16px;
+  }
+  .demand-list .list-row > .demand-cell {
+    grid-area: main;
+    min-width: 0;
+  }
+  .demand-list .demand-cell > div {
+    min-width: 0;
+  }
+  .demand-list .demand-title-link {
+    font-size: 13px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .demand-list .list-row > .big-score {
+    grid-area: score;
+    align-self: start;
+    font-size: 20px;
+    line-height: 1;
+  }
+  .demand-list .list-row > .list-contact {
+    grid-area: meta;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    padding-left: 27px; /* zarovnání pod text, vedle checkboxu */
+    min-width: 0;
+  }
+  .demand-list .list-contact b {
+    font-size: 11px;
+    font-weight: 600;
+    color: #486466;
+  }
+  .demand-list .list-contact small {
+    margin-top: 0;
+  }
+  .demand-list .list-row > .status {
+    grid-area: status;
+    justify-self: end;
+    align-self: center;
+  }
+  .demand-list .row-ext-id {
+    display: none;
+  }
+  .demand-list .list-row p {
+    flex-wrap: wrap;
+  }
+}
