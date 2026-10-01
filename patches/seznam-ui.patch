@@ -1,0 +1,33 @@
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1443,7 +1443,13 @@
+         { id: "trash", label: "Koš", count: countFor("TRASH") },
+       ]
+     : [
+-        { id: "inbox", label: "Doručené", count: countFor("INBOX") },
++        { id: "inbox", label: "Doručené", count: countFor("inbox") || countFor("INBOX") },
++        { id: "sent", label: "Odeslané", count: countFor("sent") },
++        { id: "drafts", label: "Koncepty", count: countFor("drafts") },
++        { id: "review", label: "Ke kontrole", count: reviewItems.length },
++        { id: "followups", label: "Follow-upy", count: followupItems.length },
++        { id: "spam", label: "Spam", count: countFor("spam") },
++        { id: "trash", label: "Koš", count: countFor("trash") },
+       ];
+   useEffect(() => {
+     fetch("/api/email/gmail/status")
+@@ -1611,10 +1617,15 @@
+     if (!window.confirm(`Odeslat e-mail na ${compose.to}?`)) return;
+     setSendingEmail(true);
+     try {
+-      const response = await fetch("/api/email/gmail/send", {
++      const sendEndpoint = mailAccount === "seznam" ? "/api/email/seznam/send" : "/api/email/gmail/send";
++      const response = await fetch(sendEndpoint, {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+-        body: JSON.stringify({ ...compose, attachments: composeAttachments, trackOpen }),
++        body: JSON.stringify({
++          ...compose,
++          attachments: composeAttachments,
++          trackOpen: mailAccount === "gmail" ? trackOpen : false,
++        }),
+       });
