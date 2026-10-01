@@ -1,6 +1,9 @@
 from pathlib import Path
 p = Path("src/app/page.tsx")
 t = p.read_text()
+if "seznam/send" in t and "sendEndpoint" in t:
+    print("send already applied")
+    raise SystemExit(0)
 old = """      const response = await fetch("/api/email/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
