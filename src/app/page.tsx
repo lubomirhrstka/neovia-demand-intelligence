@@ -38,6 +38,7 @@ import { Pipeline } from "@/components/Pipeline";
 import { Tasks } from "@/components/Tasks";
 import { BookingSettings } from "@/components/BookingSettings";
 import { SavedViewsBar } from "@/components/SavedViewsBar";
+import { SourceTabsAndFilters } from "@/components/SourceTabsAndFilters";
 import { CalendarView } from "@/components/CalendarView";
 import { useStalledOpportunities } from "@/lib/use-stalled-opportunities";
 import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
@@ -2513,7 +2514,7 @@ function Demands({
     [loading, setLoading] = useState(true),
     [exportTarget, setExportTarget] = useState<{ items: ImportedDemand[]; filename: string } | null>(null),
     [filtersOpen, setFiltersOpen] = useState(false),
-    [sourceFilters, setSourceFilters] = useState<string[]>([]),
+    [sourceTab, setSourceTab] = useState<string>(""),
     [contactFilters, setContactFilters] = useState<string[]>([]),
     [roleFilters, setRoleFilters] = useState<string[]>([]),
     [minScore, setMinScore] = useState("0"),
@@ -2560,7 +2561,7 @@ function Demands({
         const requestedSource = window.localStorage.getItem("neovia-search-source");
         if (requestedSource) {
           window.localStorage.removeItem("neovia-search-source");
-          setSourceFilters([requestedSource]);
+          setSourceTab(requestedSource);
         }
         const requested = window.localStorage.getItem("neovia-open-demand");
         if (requested) {
@@ -2579,8 +2580,20 @@ function Demands({
   }, []);
   const sources = [...new Set(rows.map((x) => x.source))];
   const roles = [
-    ...new Set(rows.map((x) => x.role || x.title).filter(Boolean)),
+    ...new Set(
+      rows
+        .filter((x) => !sourceTab || x.source === sourceTab)
+        .map((x) => x.role || x.title)
+        .filter(Boolean),
+    ),
   ].sort();
+  const sourceCounts = sources.reduce(
+    (acc, src) => {
+      acc[src] = rows.filter((r) => r.source === src).length;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
   const contactOptions = ["s kontaktem", "bez kontaktu"];
   const detailQualityOptions = ["plné znění", "chybí detail"];
   const toggleMultiValue = (
@@ -2595,7 +2608,7 @@ function Demands({
     const score = demandIntelligence(d).score;
     return (
       text.includes(query.toLowerCase()) &&
-      (!sourceFilters.length || sourceFilters.includes(d.source)) &&
+      (!sourceTab || d.source === sourceTab) &&
       (!roleFilters.length || roleFilters.includes(d.role || d.title)) &&
       score >= Number(minScore || 0) &&
       (!detailQualityFilters.length ||
@@ -2978,12 +2991,35 @@ function Demands({
           Export
         </button>
       </div>
+      <SourceTabsAndFilters
+        sources={sources}
+        sourceCounts={sourceCounts}
+        totalCount={rows.length}
+        sourceTab={sourceTab}
+        setSourceTab={setSourceTab}
+        filtersOpen={filtersOpen}
+        roles={roles}
+        roleFilters={roleFilters}
+        setRoleFilters={setRoleFilters}
+        contactOptions={contactOptions}
+        contactFilters={contactFilters}
+        setContactFilters={setContactFilters}
+        detailQualityOptions={detailQualityOptions}
+        detailQualityFilters={detailQualityFilters}
+        setDetailQualityFilters={setDetailQualityFilters}
+        minScore={minScore}
+        setMinScore={setMinScore}
+        query={query}
+        setQuery={setQuery}
+        displayedCount={displayed.length}
+        toggleMultiValue={toggleMultiValue}
+      />
       <SavedViewsBar
         view="demands"
         note={note}
         currentFilters={{
           query,
-          sourceFilters,
+          sourceTab,
           contactFilters,
           roleFilters,
           minScore,
@@ -2991,7 +3027,8 @@ function Demands({
         }}
         onApply={(f) => {
           if (typeof f.query === "string") setQuery(f.query);
-          if (Array.isArray(f.sourceFilters)) setSourceFilters(f.sourceFilters as string[]);
+          if (typeof f.sourceTab === "string") setSourceTab(f.sourceTab);
+          else if (Array.isArray(f.sourceFilters) && f.sourceFilters.length === 1) setSourceTab(String(f.sourceFilters[0]));
           if (Array.isArray(f.contactFilters)) setContactFilters(f.contactFilters as string[]);
           if (Array.isArray(f.roleFilters)) setRoleFilters(f.roleFilters as string[]);
           if (typeof f.minScore === "string" || typeof f.minScore === "number") setMinScore(String(f.minScore));
@@ -3000,100 +3037,6 @@ function Demands({
           note("Pohled aplikován.");
         }}
       />
-      {filtersOpen && (
-        <div className="filter-panel">
-          <div className="multi-filter">
-            Zdroj
-            <div>
-              {sources.map((x) => (
-                <button
-                  className={sourceFilters.includes(x) ? "active" : ""}
-                  key={x}
-                  type="button"
-                  onClick={() => toggleMultiValue(x, sourceFilters, setSourceFilters)}
-                >
-                  {x}
-                </button>
-              ))}
-            </div>
-            {!sourceFilters.length && <small>Všechny zdroje</small>}
-          </div>
-          <div className="multi-filter wide-filter">
-            Role
-            <div>
-              {roles.slice(0, 120).map((x) => (
-                <button
-                  className={roleFilters.includes(x) ? "active" : ""}
-                  key={x}
-                  type="button"
-                  onClick={() => toggleMultiValue(x, roleFilters, setRoleFilters)}
-                >
-                  {x}
-                </button>
-              ))}
-            </div>
-            {!roleFilters.length && <small>Všechny role</small>}
-          </div>
-          <label>
-            Min. skóre
-            <select value={minScore} onChange={(e) => setMinScore(e.target.value)}>
-              <option value="0">Vše</option>
-              <option value="50">50 % a více</option>
-              <option value="70">70 % a více</option>
-              <option value="80">80 % a více</option>
-              <option value="90">90 % a více</option>
-            </select>
-          </label>
-          <div className="multi-filter">
-            Kontakt
-            <div>
-              {contactOptions.map((x) => (
-                <button
-                  className={contactFilters.includes(x) ? "active" : ""}
-                  key={x}
-                  type="button"
-                  onClick={() => toggleMultiValue(x, contactFilters, setContactFilters)}
-                >
-                  {x}
-                </button>
-              ))}
-            </div>
-            {!contactFilters.length && <small>Všechny</small>}
-          </div>
-          <div className="multi-filter">
-            Detail inzerátu
-            <div>
-              {detailQualityOptions.map((x) => (
-                <button
-                  className={detailQualityFilters.includes(x) ? "active" : ""}
-                  key={x}
-                  type="button"
-                  onClick={() => toggleMultiValue(x, detailQualityFilters, setDetailQualityFilters)}
-                >
-                  {x}
-                </button>
-              ))}
-            </div>
-            {!detailQualityFilters.length && <small>Vše</small>}
-          </div>
-          <button
-            className="secondary"
-            onClick={() => {
-              setSourceFilters([]);
-              setContactFilters([]);
-              setRoleFilters([]);
-              setMinScore("0");
-              setDetailQualityFilters([]);
-              setQuery("");
-            }}
-          >
-            Vyčistit filtry
-          </button>
-          <small>
-            {displayed.length} z {rows.length} poptávek
-          </small>
-        </div>
-      )}
       {selectedDemandIds.length > 0 && (
         <section className="bulk-actions panel">
           <div>
@@ -3139,7 +3082,7 @@ function Demands({
             <button
               className="inline-cta"
               onClick={() => {
-                setSourceFilters([]);
+                setSourceTab("");
                 setContactFilters([]);
                 setRoleFilters([]);
                 setMinScore("0");
