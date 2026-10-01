@@ -29,46 +29,79 @@ export function extractLinkedInJobId(urlOrId: string): string | null {
 }
 
 function decodeHtmlEntities(value: string) {
-  return value
-    .replace(/&/g, "&")
-    .replace(/"/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\u00a0/g, " ")
-    .trim();
+  // Pozor: entity skládáme přes "&" + "amp;" — při zápisu souboru přes některé nástroje
+  // se doslovné "&amp;" samo dekódovalo na "&" a funkce pak nedělala nic.
+  const AMP = "&" + "amp;";
+  const QUOT = "&" + "quot;";
+  const LT = "&" + "lt;";
+  const GT = "&" + "gt;";
+  const once = (v: string) =>
+    v
+      .split(QUOT).join('"')
+      .split(LT).join("<")
+      .split(GT).join(">")
+      .replace(/&#39;/g, "'")
+      .replace(/&#x27;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .split(AMP).join("&");
+  // LinkedIn občas kóduje dvojitě ("&amp;amp;") → dekódujeme, dokud se hodnota mění (max 3×)
+  let out = value;
+  for (let i = 0; i < 3; i += 1) {
+    const next = once(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out.replace(/\u00a0/g, " ").trim();
 }
 
-/** "{Firma} hiring {Pozice} in {Lokalita} | LinkedIn" */
+/** Odstraní šum, který zaměstnavatelé dávají přímo do názvu pozice ("Job Title (EN): …"). */
+function cleanRoleTitle(value: string) {
+  return value.replace(/^\s*(job title|název pozice|pozice)\s*(\([a-z]{2}\))?\s*:\s*/i, "").trim();
+}
+
+const WORK_MODE = /\((Hybrid|Hybridní|Remote|Na dálku|Na místě|On-site|Onsite)\)/i;
+/** Titulek stránky uvádí jen město — režim práce (Hybrid/Remote) z alertu nechceme ztratit. */
+export function mergeWorkMode(newLocation: string, oldLocation: string | null | undefined) {
+  const mode = (oldLocation || "").match(WORK_MODE)?.[0];
+  if (!mode || !newLocation || WORK_MODE.test(newLocation)) return newLocation;
+  return `${newLocation} ${mode}`;
+}
+
+/**
+ * LinkedIn vrací titulek pozice ve více formátech podle jazyka / hlaviček požadavku:
+ *   "Firma hiring Pozice in Lokalita | LinkedIn"
+ *   "Pozice at Firma — Lokalita | LinkedIn Jobs"
+ *   "Pozice ve společnosti Firma – Lokalita | Pracovní příležitosti LinkedIn"
+ * Dřív parser znal jen první variantu → s Accept-Language cs-CZ selhávalo obohacení u všech pozic.
+ */
 export function parseHiringTitle(title: string): LinkedInJobMeta | null {
   const cleaned = decodeHtmlEntities(title)
-    .replace(/\s*\|\s*LinkedIn\s*$/i, "")
+    .replace(/\s*\|\s*(Pracovní příležitosti LinkedIn|LinkedIn Jobs|LinkedIn)\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return null;
+  const meta = (company: string, role: string, location: string): LinkedInJobMeta => ({
+    company: company.trim(),
+    title: cleanRoleTitle(role),
+    location: location.trim(),
+    source: "og-title",
+  });
 
-  // English OG: Company hiring Role in Location
+  // 1) "Firma hiring Pozice in Lokalita"
   let m = cleaned.match(/^(.+?)\s+hiring\s+(.+?)\s+in\s+(.+)$/i);
-  if (m) {
-    return {
-      company: m[1].trim(),
-      title: m[2].trim(),
-      location: m[3].trim(),
-      source: "og-title",
-    };
-  }
+  if (m) return meta(m[1], m[2], m[3]);
 
-  // Czech-ish variants sometimes seen in localized titles
+  // 2) "Pozice ve společnosti Firma – Lokalita" (čeština)
+  m = cleaned.match(/^(.+)\s+ve společnosti\s+(.+?)\s+[–—-]\s+(.+)$/i);
+  if (m) return meta(m[2], m[1], m[3]);
+
+  // 3) "Pozice at Firma — Lokalita" (angličtina; role může obsahovat "at", proto poslední výskyt)
+  m = cleaned.match(/^(.+)\s+at\s+(.+?)\s+[–—-]\s+(.+)$/i);
+  if (m) return meta(m[2], m[1], m[3]);
+
+  // 4) Starší česká varianta "Firma hledá Pozice v Lokalita"
   m = cleaned.match(/^(.+?)\s+hledá\s+(.+?)\s+(?:v|ve|na)\s+(.+)$/i);
-  if (m) {
-    return {
-      company: m[1].trim(),
-      title: m[2].trim(),
-      location: m[3].trim(),
-      source: "og-title",
-    };
-  }
+  if (m) return meta(m[1], m[2], m[3]);
 
   return null;
 }
@@ -83,7 +116,7 @@ function parseGuestTopcard(html: string): LinkedInJobMeta | null {
     html.match(/topcard__org-name-link[^>]*>([^<]+)/i);
   const locationMatch = html.match(/topcard__flavor--bullet[^>]*>([^<]+)/i);
 
-  const title = decodeHtmlEntities(titleMatch?.[1] || "");
+  const title = cleanRoleTitle(decodeHtmlEntities(titleMatch?.[1] || ""));
   const company = decodeHtmlEntities(companyMatch?.[1] || "");
   const location = decodeHtmlEntities(locationMatch?.[1] || "");
   if (!title || title.length < 2) return null;
@@ -180,11 +213,46 @@ export async function enrichLinkedInJobs<
       if (!result.meta) continue;
       const job = jobs[result.index];
       if (result.meta.title) job.title = result.meta.title.slice(0, 220);
-      if (result.meta.company) job.company = result.meta.company.slice(0, 180);
-      if (result.meta.location) job.location = result.meta.location.slice(0, 180);
+      if (isPlausibleCompany(result.meta.company)) job.company = result.meta.company.slice(0, 180);
+      const cleanLoc = cleanLinkedInLocation(result.meta.location);
+      if (cleanLoc) job.location = mergeWorkMode(cleanLoc, job.location);
       enriched += 1;
     }
   }
 
+  // Lokalitu čistíme i u jobů, které se obohatit nepodařilo (šum z e-mailu).
+  for (const job of jobs) job.location = cleanLinkedInLocation(job.location);
+
   return { jobs, enriched };
+}
+
+/**
+ * Vyčistí lokalitu z LinkedIn alertu — e-mailový text k ní lepí šum:
+ * mzdové rozpětí ("1,4 mil. Kč–2,1 mil. Kč/ rok"), "Probíhá nábor",
+ * "Snadná žádost", počet spojení ("Praha 1" / "Praha (Hybrid) 2").
+ */
+export function cleanLinkedInLocation(value: string | null | undefined): string {
+  let v = (value || "").replace(/\s+/g, " ").trim();
+  if (!v) return "";
+  v = v
+    .replace(/\b(Probíhá nábor|Actively recruiting|Snadná žádost|Easy Apply|Promoted|Propagováno)\b.*$/i, "")
+    .replace(/\d[\d\s,.]*\s*(mil\.|tis\.|K)?\s*(Kč|CZK|EUR|€|\$)[\s\S]*$/i, "")
+    .replace(/\s+\d{1,3}\s*(spojení|connections?)\s*$/i, "")
+    // "Praha (Hybrid) 2" → počet spojení za závorkou; "Praha 1" necháváme (může jít o obvod)
+    .replace(/\)\s+\d{1,3}\s*$/, ")")
+    .replace(/[–\-·|,;]+\s*$/g, "")
+    .trim();
+  // pojistka: URL fragment nebo nesmysl není lokalita
+  if (/https?:|trackingid|refid|\/(view|jobs|comm)\//i.test(v)) return "";
+  return v.slice(0, 120);
+}
+
+/** Sanity check výsledku obohacení — chrání před uložením evidentního odpadu jako firmy. */
+export function isPlausibleCompany(value: string | null | undefined): boolean {
+  const v = (value || "").trim();
+  if (v.length < 2 || v.length > 160) return false;
+  if (/^job title|^firma neuvedena|linkedin$/i.test(v)) return false;
+  if (/https?:|trackingid|refid|%2[a-f0-9]|\/(view|jobs|comm)\//i.test(v)) return false;
+  if (v.length > 30 && !v.includes(" ") && /[/?=&]/.test(v)) return false;
+  return true;
 }

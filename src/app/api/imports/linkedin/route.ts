@@ -4,7 +4,7 @@ import { sameCompanyIdentity } from "@/lib/matching";
 import { getFreshGmailAccount, gmailFetch } from "@/lib/gmail";
 import { fetchLinkedInFromSeznam, getSeznamImapAccount } from "@/lib/seznam-imap";
 import { verifyCompanyWeb } from "@/lib/company-web-verify";
-import { enrichLinkedInJobs } from "@/lib/linkedin-job-enrich";
+import { enrichLinkedInJobs, isPlausibleCompany } from "@/lib/linkedin-job-enrich";
 import { companies, connectorSources, demands, importRuns, monitorSettings, emailAccounts } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -153,6 +153,12 @@ function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""
       .trim();
     if (!title || title.length < 3 || !company || company.length < 2) return;
     if (looksLikeUrlJunk(company)) return;
+    // Přeposlané e-maily: parser jinak vytahoval jako firmu "Fwd", "Job Title (EN)" apod.
+    if (!isPlausibleCompany(company) || /^(fwd?|re|fw|odp)$/i.test(company.trim())) return;
+    // Jednoslovný / useknutý název ("Business", "Manager (Czech" s neuzavřenou závorkou) není použitelná pozice.
+    const openParens = (title.match(/\(/g) || []).length;
+    const closeParens = (title.match(/\)/g) || []).length;
+    if (title.trim().split(/\s+/).length < 2 || openParens > closeParens) return;
     const key = `${title.toLowerCase()}|${company.toLowerCase()}|${locationRaw.toLowerCase()}`;
     if (seen.has(key)) return;
     seen.add(key);
