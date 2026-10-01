@@ -1443,7 +1443,13 @@ function EmailClient({ note }: { note: (s: string) => void }) {
         { id: "trash", label: "Koš", count: countFor("TRASH") },
       ]
     : [
-        { id: "inbox", label: "Doručené", count: countFor("INBOX") },
+        { id: "inbox", label: "Doručené", count: countFor("inbox") || countFor("INBOX") },
+        { id: "sent", label: "Odeslané", count: countFor("sent") },
+        { id: "drafts", label: "Koncepty", count: countFor("drafts") },
+        { id: "review", label: "Ke kontrole", count: reviewItems.length },
+        { id: "followups", label: "Follow-upy", count: followupItems.length },
+        { id: "spam", label: "Spam", count: countFor("spam") },
+        { id: "trash", label: "Koš", count: countFor("trash") },
       ];
   useEffect(() => {
     fetch("/api/email/gmail/status")
@@ -1696,12 +1702,8 @@ function EmailClient({ note }: { note: (s: string) => void }) {
         clearSelection();
         return;
       }
-      if (mailAccount === "seznam") {
-        note("Mazání Seznam e-mailů z aplikace zatím není zapnuté. Zprávy se jen bezpečně zobrazují přes IMAP.");
-        clearSelection();
-        return;
-      }
-      const response = await fetch("/api/email/gmail/messages", {
+      const deleteEndpoint = mailAccount === "seznam" ? "/api/email/seznam/messages" : "/api/email/gmail/messages";
+      const response = await fetch(deleteEndpoint, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: selectedIds, folder }),
@@ -1710,8 +1712,9 @@ function EmailClient({ note }: { note: (s: string) => void }) {
       if (!response.ok) throw new Error(data.error || "E-maily se nepodařilo smazat.");
       note(data.message || `Přesunuto do koše: ${selectedIds.length}`);
       clearSelection();
-      if (status?.connected) {
-        const refreshed = await fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`);
+      const foldersEndpoint = mailAccount === "seznam" ? "/api/email/seznam/folders" : "/api/email/gmail/folders";
+      if ((mailAccount === "gmail" && status?.connected) || (mailAccount === "seznam" && seznamStatus?.connected)) {
+        const refreshed = await fetch(`${foldersEndpoint}?folder=${encodeURIComponent(folder)}`);
         const payload = await refreshed.json().catch(() => null);
         if (payload) setMailData(payload);
       }
