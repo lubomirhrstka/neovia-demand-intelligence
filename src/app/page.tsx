@@ -1611,10 +1611,15 @@ function EmailClient({ note }: { note: (s: string) => void }) {
     if (!window.confirm(`Odeslat e-mail na ${compose.to}?`)) return;
     setSendingEmail(true);
     try {
-      const response = await fetch("/api/email/gmail/send", {
+      const sendEndpoint = mailAccount === "seznam" ? "/api/email/seznam/send" : "/api/email/gmail/send";
+      const response = await fetch(sendEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...compose, attachments: composeAttachments, trackOpen }),
+        body: JSON.stringify({
+          ...compose,
+          attachments: composeAttachments,
+          trackOpen: mailAccount === "gmail" ? trackOpen : false,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "E-mail se nepodařilo odeslat.");
@@ -1643,12 +1648,15 @@ function EmailClient({ note }: { note: (s: string) => void }) {
         setLocalDrafts(remaining);
         window.localStorage.setItem("neovia-email-drafts", JSON.stringify(remaining));
       }
-      note(data.trackingId ? `E-mail byl odeslaný. Tracking ID: ${data.trackingId}` : "E-mail byl odeslaný přes připojený Gmail účet.");
-      if (status?.connected && !["review", "followups"].includes(folder)) {
-        fetch(`/api/email/gmail/folders?folder=${encodeURIComponent(folder)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => data && setMailData(data))
-          .catch(() => undefined);
+      note(data.trackingId ? `E-mail byl odeslaný. Tracking ID: ${data.trackingId}` : mailAccount === "seznam" ? "E-mail byl odeslaný přes Seznam.cz SMTP." : "E-mail byl odeslaný přes připojený Gmail účet.");
+      if (!["review", "followups"].includes(folder)) {
+        const foldersEndpoint = mailAccount === "seznam" ? "/api/email/seznam/folders" : "/api/email/gmail/folders";
+        if ((mailAccount === "gmail" && status?.connected) || (mailAccount === "seznam" && seznamStatus?.connected)) {
+          fetch(`${foldersEndpoint}?folder=${encodeURIComponent(folder)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => data && setMailData(data))
+            .catch(() => undefined);
+        }
       }
     } catch (error) {
       note(error instanceof Error ? error.message : "E-mail se nepodařilo odeslat.");
@@ -1867,7 +1875,7 @@ function EmailClient({ note }: { note: (s: string) => void }) {
             {!mailLoading && (mailAccount === "gmail" ? status?.connected : seznamStatus?.connected) && !["review", "followups"].includes(folder) && !filteredMessages.length && (
               <div className="empty-state">V této složce není žádná zpráva odpovídající filtru.</div>
             )}
-            {(mailAccount === "gmail" && (!status?.connected || ["review", "followups"].includes(folder))) && sampleQueue.map((item) => {
+            {((mailAccount === "gmail" && (!status?.connected || ["review", "followups"].includes(folder))) || (mailAccount === "seznam" && ["review", "followups"].includes(folder))) && sampleQueue.map((item) => {
               const rowId = String(item.id || item.subject);
               return (
               <div key={rowId + item.state} className={`email-row ${selectedIds.includes(rowId) ? "selected" : ""}`}>
@@ -1919,9 +1927,10 @@ function EmailClient({ note }: { note: (s: string) => void }) {
               </>
             ) : (
               <>
-                <span>Zobrazuje doručené zprávy z připojené schránky přes IMAP.</span>
-                <span>LinkedIn alerty ze Seznamu lze následně vytěžit v sekci Zdroje.</span>
-                <span>Odesílání a mazání přes Seznam zatím není zapnuté — Gmail zůstává odesílací účet.</span>
+                <span>Načítá Doručené, Odeslané, Koncepty, Spam a Koš přes IMAP.</span>
+                <span>Odesílání přes Seznam SMTP, mazání do koše a stažení příloh.</span>
+                <span>Ke kontrole a Follow-upy fungují stejně jako u Gmailu (lokální fronta).</span>
+                <span>LinkedIn alerty ze Seznamu lze vytěžit v sekci Zdroje.</span>
               </>
             )}
           </div>
@@ -2000,14 +2009,15 @@ function EmailClient({ note }: { note: (s: string) => void }) {
                   {Boolean(selectedEmail.attachments?.length) && (
                     <div className="email-attachments">
                       <b>Přílohy</b>
-                      {selectedEmail.attachments?.map((file) => selectedEmail.sourceAccount === "seznam" ? (
-                        <span key={file.id} className="email-attachment-static">
-                          {file.filename} <small>{Math.ceil((file.size || 0) / 1024)} KB</small>
-                        </span>
-                      ) : (
+                      {selectedEmail.attachments?.map((file) => (
                         <a
                           key={file.id}
-                          href={`/api/email/gmail/messages/${encodeURIComponent(selectedEmail.id)}/attachments/${encodeURIComponent(file.id)}?filename=${encodeURIComponent(file.filename)}`}
+                          className="email-attachment-link"
+                          href={
+                            selectedEmail.sourceAccount === "seznam"
+                              ? `/api/email/seznam/messages/${encodeURIComponent(selectedEmail.id)}/attachments/${encodeURIComponent(file.id)}?filename=${encodeURIComponent(file.filename)}`
+                              : `/api/email/gmail/messages/${encodeURIComponent(selectedEmail.id)}/attachments/${encodeURIComponent(file.id)}?filename=${encodeURIComponent(file.filename)}`
+                          }
                           target="_blank"
                           rel="noreferrer"
                         >
