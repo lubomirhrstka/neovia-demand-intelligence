@@ -4474,3 +4474,81 @@ button.metric:hover {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Uložené pohledy */
+.saved-views-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--card) 92%, var(--bg));
+}
+.saved-views-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.saved-views-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+  margin-right: 4px;
+}
+.saved-views-empty {
+  opacity: 0.55;
+}
+.saved-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+.saved-view-chip > button:first-child {
+  border: 0;
+  background: transparent;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.saved-view-chip > button:first-child:hover {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.saved-view-delete {
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  opacity: 0.55;
+  cursor: pointer;
+  line-height: 1;
+}
+.saved-view-delete:hover {
+  opacity: 1;
+  color: #c0392b;
+}
+.saved-views-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.saved-views-save input {
+  min-width: 140px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}

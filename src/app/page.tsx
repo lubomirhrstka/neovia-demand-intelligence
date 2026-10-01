@@ -37,6 +37,7 @@ import { Title, Metric, Header, Row } from "@/components/dashboard-widgets";
 import { Pipeline } from "@/components/Pipeline";
 import { Tasks } from "@/components/Tasks";
 import { BookingSettings } from "@/components/BookingSettings";
+import { SavedViewsBar } from "@/components/SavedViewsBar";
 import { CalendarView } from "@/components/CalendarView";
 import { useStalledOpportunities } from "@/lib/use-stalled-opportunities";
 import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
@@ -2520,6 +2521,7 @@ function Demands({
     [searchHistory, setSearchHistory] = useState<string[]>([]),
     [selectedDemandIds, setSelectedDemandIds] = useState<string[]>([]),
     [verifyingDemandId, setVerifyingDemandId] = useState<string | null>(null),
+    [enrichingDemandId, setEnrichingDemandId] = useState<string | null>(null),
     [selected, setSelected] = useState<ImportedDemand | null>(null),
     [detailTab, setDetailTab] = useState<"overview" | "actions" | "listing" | "outreach">("overview"),
     [companyDetail, setCompanyDetail] = useState<ImportedDemand | null>(null),
@@ -2770,7 +2772,38 @@ function Demands({
       setVerifyingDemandId(null);
     }
   };
-  const removeDemand = async () => {
+  const enrichFromLinkedIn = async (demand: ImportedDemand) => {
+    setEnrichingDemandId(demand.id);
+    try {
+      const response = await fetch("/api/demands/linkedin-enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demandId: demand.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Doplnění z LinkedIn se nepodařilo.");
+      await loadDemands();
+      setSelected((current) =>
+        current?.id === demand.id
+          ? {
+              ...current,
+              title: data.title || current.title,
+              role: data.title || current.role,
+              location: data.location || current.location,
+              company: data.company || current.company,
+            }
+          : current,
+      );
+      note(
+        `LinkedIn doplněno: ${data.company || "?"} · ${data.title || "?"}${data.location ? ` · ${data.location}` : ""}`,
+      );
+    } catch (error) {
+      note(error instanceof Error ? error.message : "Doplnění z LinkedIn se nepodařilo.");
+    } finally {
+      setEnrichingDemandId(null);
+    }
+  };
+    const removeDemand = async () => {
     if (!selected) return;
     const confirmed = window.confirm(
       "Opravdu chcete odstranit tuto poptávku? Poptávka se přesune do koše a při dalším importu stejného zdroje se znovu nenačte.",
@@ -2945,6 +2978,28 @@ function Demands({
           Export
         </button>
       </div>
+      <SavedViewsBar
+        view="demands"
+        note={note}
+        currentFilters={{
+          query,
+          sourceFilters,
+          contactFilters,
+          roleFilters,
+          minScore,
+          detailQualityFilters,
+        }}
+        onApply={(f) => {
+          if (typeof f.query === "string") setQuery(f.query);
+          if (Array.isArray(f.sourceFilters)) setSourceFilters(f.sourceFilters as string[]);
+          if (Array.isArray(f.contactFilters)) setContactFilters(f.contactFilters as string[]);
+          if (Array.isArray(f.roleFilters)) setRoleFilters(f.roleFilters as string[]);
+          if (typeof f.minScore === "string" || typeof f.minScore === "number") setMinScore(String(f.minScore));
+          if (Array.isArray(f.detailQualityFilters)) setDetailQualityFilters(f.detailQualityFilters as string[]);
+          setFiltersOpen(true);
+          note("Pohled aplikován.");
+        }}
+      />
       {filtersOpen && (
         <div className="filter-panel">
           <div className="multi-filter">
@@ -3321,6 +3376,16 @@ function Demands({
                 >
                   {verifyingDemandId === selected.id ? "Ověřuji…" : "Ověřit web a kontakty"}
                 </button>
+                {(selected.sourceUrl || selected.externalId || selected.source || "").toString().match(/linkedin/i) && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={enrichingDemandId === selected.id}
+                    onClick={() => enrichFromLinkedIn(selected)}
+                  >
+                    {enrichingDemandId === selected.id ? "Doplňuji…" : "Doplnit z LinkedIn"}
+                  </button>
+                )}
               </div>
             </section>
             <section className="demand-source-panel next-step-panel">
@@ -4402,6 +4467,23 @@ function Contacts({
           Vyčistit
         </button>
       </div>
+      <SavedViewsBar
+        view="contacts"
+        note={note}
+        currentFilters={{
+          crmSearch,
+          contactFilter,
+          companyFilter,
+          crmTab,
+        }}
+        onApply={(f) => {
+          if (typeof f.crmSearch === "string") setCrmSearch(f.crmSearch);
+          if (typeof f.contactFilter === "string") setContactFilter(f.contactFilter);
+          if (typeof f.companyFilter === "string") setCompanyFilter(f.companyFilter);
+          if (f.crmTab === "contacts" || f.crmTab === "companies") setCrmTab(f.crmTab);
+          note("Pohled aplikován.");
+        }}
+      />
       <section className="crm-kpis">
         <button
           type="button"
