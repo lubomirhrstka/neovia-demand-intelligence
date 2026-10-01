@@ -4748,6 +4748,11 @@ button.metric:hover {
 
 /* ===== Poptávky na telefonu: kartičky místo 4sloupcové tabulky ===== */
 @media (max-width: 720px) {
+  /* starší pravidlo nutí .list na min-width 650px (vodorovné posouvání) — kartičky ho nepotřebují */
+  .panel.list.demand-list {
+    min-width: 0;
+    overflow: visible;
+  }
   .demand-list .list-head {
     display: flex;
     padding: 10px 16px;
