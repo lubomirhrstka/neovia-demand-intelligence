@@ -4815,3 +4815,8 @@ button.metric:hover {
     flex-wrap: wrap;
   }
 }
+
+/* Tlačítko menu nemá překrývat otevřené modální okno (detail poptávky apod.) */
+body:has(.modal-backdrop) .mobile-nav-toggle {
+  display: none;
+}
