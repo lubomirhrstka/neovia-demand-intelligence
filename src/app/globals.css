@@ -1484,6 +1484,8 @@ body {
     z-index: 49;
     width: min(280px, 82vw);
     padding-top: max(25px, env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .sidebar.open {
     transform: translateX(0);
@@ -4075,7 +4077,8 @@ button.metric:hover {
   align-items: center;
   font-size: 11px;
 }
-@media (max-width: 1050px) {
+/* Tablet: zúžený ikonový sidebar. Pod 860px přebírá vysouvací menu (hamburger) — viz .mobile-nav-toggle. */
+@media (min-width: 861px) and (max-width: 1050px) {
   .sidebar {
     width: 64px;
     padding: 20px 8px;
@@ -4118,14 +4121,12 @@ button.metric:hover {
   }
 }
 @media (max-width: 720px) {
-  .sidebar {
-    display: none;
-  }
   .content {
     margin-left: 0;
   }
   .content > header {
-    padding: 0 18px;
+    /* vlevo místo pro plovoucí tlačítko menu (hamburger) */
+    padding: 0 18px 0 62px;
   }
   .page {
     padding: 24px 16px;
