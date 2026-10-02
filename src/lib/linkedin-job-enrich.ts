@@ -10,6 +10,8 @@ export type LinkedInJobMeta = {
   company: string;
   location: string;
   source: "og-title" | "guest-topcard";
+  /** Celý text inzerátu z guest API (pokud je dostupný). */
+  description?: string;
 };
 
 const UA =
@@ -167,29 +169,50 @@ export async function enrichLinkedInJob(urlOrId: string): Promise<LinkedInJobMet
   const jobId = extractLinkedInJobId(urlOrId);
   if (!jobId) return null;
 
-  // 1) Full public job page — OG title is the most reliable
+  // 1) Guest job posting API — jediný požadavek vrátí firmu, pozici, lokalitu i CELÝ text inzerátu
+  const guestHtml = await fetchText(`https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobId}`);
+  const description = guestHtml ? parseGuestDescription(guestHtml) : "";
+  if (guestHtml) {
+    const topcard = parseGuestTopcard(guestHtml);
+    if (topcard) return { ...topcard, description: description || undefined };
+  }
+
+  // 2) Fallback: veřejná stránka pozice — titulek ve 3 formátech (viz parseHiringTitle)
   const pageHtml = await fetchText(`https://www.linkedin.com/jobs/view/${jobId}`);
   if (pageHtml) {
     const og = extractOgTitle(pageHtml);
     if (og) {
       const parsed = parseHiringTitle(og);
-      if (parsed) return parsed;
+      if (parsed) return { ...parsed, description: description || undefined };
     }
-  }
-
-  // 2) Guest job posting API — structured topcard without login
-  const guestHtml = await fetchText(`https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobId}`);
-  if (guestHtml) {
-    const topcard = parseGuestTopcard(guestHtml);
-    if (topcard) return topcard;
   }
 
   return null;
 }
 
+/** Celý text inzerátu z guest API (blok "show-more-less-html__markup"), převedený na čistý text. */
+function parseGuestDescription(html: string): string {
+  const m = html.match(/show-more-less-html__markup[^>]*>([\s\S]*?)<\/div>/i);
+  if (!m) return "";
+  return decodeHtmlEntities(
+    m[1]
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|li|ul|ol|h\d)>/gi, "\n")
+      .replace(/<li[^>]*>/gi, "• ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n\s*\n\s*\n+/g, "\n\n"),
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim()
+    .slice(0, 12000);
+}
+
 /** Obohatí seznam jobů (max `limit` paralelních requestů, s limitem celkového počtu). */
 export async function enrichLinkedInJobs<
-  T extends { externalId?: string; url?: string; title: string; company: string; location: string },
+  T extends { externalId?: string; url?: string; title: string; company: string; location: string; detail?: string },
 >(jobs: T[], options?: { limit?: number; concurrency?: number }): Promise<{ jobs: T[]; enriched: number }> {
   const limit = Math.max(0, options?.limit ?? 12);
   const concurrency = Math.max(1, Math.min(4, options?.concurrency ?? 3));
@@ -216,6 +239,8 @@ export async function enrichLinkedInJobs<
       if (isPlausibleCompany(result.meta.company)) job.company = result.meta.company.slice(0, 180);
       const cleanLoc = cleanLinkedInLocation(result.meta.location);
       if (cleanLoc) job.location = mergeWorkMode(cleanLoc, job.location);
+      // Skutečný text inzerátu má přednost před výřezem z e-mailového alertu
+      if (result.meta.description && result.meta.description.length > 80) job.detail = result.meta.description;
       enriched += 1;
     }
   }

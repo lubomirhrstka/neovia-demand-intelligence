@@ -398,3 +398,6 @@ function normalizeCompanyNameSafe(raw: string) {
   if (!trimmed || trimmed.length < 2) return "Firma neuvedena (LinkedIn)";
   return trimmed;
 }
+
+// LinkedIn + ověření webu = desítky síťových požadavků
+export const maxDuration = 120;

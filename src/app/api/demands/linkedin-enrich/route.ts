@@ -9,6 +9,7 @@ import {
   mergeWorkMode,
   type LinkedInJobMeta,
 } from "@/lib/linkedin-job-enrich";
+import { verifyCompanyWeb } from "@/lib/company-web-verify";
 import { companies, demands } from "@/lib/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -29,7 +30,14 @@ const isLinkedInDemand = (d: DemandRow) =>
  * Firmu NIKDY nepřejmenovává (placeholder je sdílený více poptávkami) —
  * dohledá existující firmu se stejnou identitou, případně vytvoří novou, a poptávku na ni přepojí.
  */
-async function applyMeta(db: Db, ownerId: string, demand: DemandRow, meta: LinkedInJobMeta, allCompanies: CompanyRow[]) {
+async function applyMeta(
+  db: Db,
+  ownerId: string,
+  demand: DemandRow,
+  meta: LinkedInJobMeta,
+  allCompanies: CompanyRow[],
+  webBudget: { left: number },
+) {
   const verifiedLoc = cleanLinkedInLocation(meta.location);
   const location = verifiedLoc ? mergeWorkMode(verifiedLoc, demand.location) : cleanLinkedInLocation(demand.location);
   let companyId = demand.companyId;
@@ -55,16 +63,44 @@ async function applyMeta(db: Db, ownerId: string, demand: DemandRow, meta: Linke
     !text ||
     /Firma neuvedena/i.test(text) ||
     (text.length < 260 && text.startsWith(demand.title) && text.includes(" — "));
-  const demandText = isStubText
-    ? `${meta.title} — ${companyName || "Firma neuvedena (LinkedIn)"}${location ? ` · ${location}` : ""}`
-    : demand.demandText;
+  const demandText =
+    meta.description && meta.description.length > 80 && (isStubText || text.length < meta.description.length)
+      ? meta.description
+      : isStubText
+        ? `${meta.title} — ${companyName || "Firma neuvedena (LinkedIn)"}${location ? ` · ${location}` : ""}`
+        : demand.demandText;
 
   await db
     .update(demands)
     .set({ title: meta.title, role: meta.title, location: location || null, companyId, demandText })
     .where(eq(demands.id, demand.id));
 
-  return { demandId: demand.id, title: meta.title, company: companyName || "", location };
+  // Firma bez webu → zkusit dohledat web (i z textu inzerátu, např. "Jsme Backendy.cz")
+  let website: string | null = null;
+  const company = allCompanies.find((c) => c.id === companyId);
+  if (company && !company.website && companyName && webBudget.left > 0) {
+    webBudget.left -= 1;
+    try {
+      const verified = await verifyCompanyWeb({
+        ownerId,
+        companyId: company.id,
+        companyName,
+        companyWebsite: null,
+        companyNote: company.note,
+        demandTitle: meta.title,
+        demandText,
+        demandSourceUrl: null,
+        maxUrls: 8,
+        timeoutMs: 5000,
+      });
+      website = verified?.website || null;
+      if (website) company.website = website;
+    } catch {
+      /* ověření webu je best effort */
+    }
+  }
+
+  return { demandId: demand.id, title: meta.title, company: companyName || "", location, website };
 }
 
 /**
@@ -100,7 +136,7 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
-    const result = await applyMeta(db, ownerId, demand, meta, allCompanies);
+    const result = await applyMeta(db, ownerId, demand, meta, allCompanies, { left: 1 });
     return NextResponse.json({ ok: true, ...result, source: meta.source });
   }
 
@@ -119,6 +155,8 @@ export async function POST(request: Request) {
 
   let enriched = 0;
   let unavailable = 0;
+  // ověření webu stojí několik požadavků — v hromadném režimu max 5 firem, ať nepřekročíme časový limit
+  const webBudget = { left: 5 };
   const results: Awaited<ReturnType<typeof applyMeta>>[] = [];
   for (const demand of candidates) {
     const id = extractLinkedInJobId(demand.sourceUrl || demand.externalId || "");
@@ -129,7 +167,7 @@ export async function POST(request: Request) {
         unavailable += 1;
         continue;
       }
-      results.push(await applyMeta(db, ownerId, demand, meta, allCompanies));
+      results.push(await applyMeta(db, ownerId, demand, meta, allCompanies, webBudget));
       enriched += 1;
     } catch {
       /* skip */
@@ -138,3 +176,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true, enriched, unavailable, total: candidates.length, results });
 }
+
+// LinkedIn + ověření webu = desítky síťových požadavků
+export const maxDuration = 120;

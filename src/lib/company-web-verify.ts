@@ -93,13 +93,54 @@ const companyNameToDomainCandidate = (name: string) => {
   return base.length >= 3 ? `https://${base}.cz` : "";
 };
 
+const IGNORED_HOSTS = /(^|\.)(linkedin\.com|google\.[a-z.]+|gmail\.com|facebook\.com|instagram\.com|youtube\.com|twitter\.com|x\.com|tiktok\.com|jobs\.cz|prace\.cz|startupjobs\.cz|indeed\.com|mpsv\.cz|seznam\.cz|email\.cz|microsoft\.com|apple\.com|lever\.co|greenhouse\.io|myworkdayjobs\.com|workday\.com|smartrecruiters\.com|recruitee\.com|bamboohr\.com|teamio\.com|jobs\.personio\.de|personio\.de|join\.com|workable\.com|breezy\.hr|lmc\.cz|almacareer\.com)$/i;
+
+/**
+ * Domény zmíněné v textu inzerátu i BEZ "https://" ("Jsme Backendy.cz", "www.firma.cz").
+ * Řadí podle síly signálu: doména u fráze "jsme / we are / o nás / web" nebo podobná názvu firmy
+ * má přednost před náhodnou zmínkou (např. web klienta v textu).
+ */
+function domainsFromText(text: string, companyName: string): string[] {
+  const nameTokens = companyName
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 4 && !["service", "services", "group", "czech", "republic", "solutions"].includes(t));
+  const found = new Map<string, number>();
+  const pattern = /(?:^|[\s(,;:"'„“])((?:www\.)?[a-z0-9][a-z0-9-]{1,62}(?:\.[a-z0-9-]{2,63})*\.(?:cz|sk|com|eu|io|net|org|de|ai|tech|cloud|app|dev|agency))(?=$|[\s),;:"'“.!?/])/gi;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(text))) {
+    const host = m[1].toLowerCase().replace(/^www\./, "");
+    if (IGNORED_HOSTS.test(host)) continue;
+    const before = text.slice(Math.max(0, m.index - 40), m.index).toLowerCase();
+    let score = found.get(host) || 0;
+    score += 1;
+    if (/(jsme|we are|o nás|about us|náš web|our website|web:|www)\s*$/.test(before.trim()) || /jsme|we are/.test(before)) score += 10;
+    if (nameTokens.some((t) => host.includes(t))) score += 8;
+    found.set(host, score);
+  }
+  // Jen silný signál (fráze "jsme…" nebo shoda s názvem firmy). Pouhá zmínka domény v textu
+  // může být web klienta/produktu — tu automaticky nepřiřazujeme.
+  return [...found.entries()]
+    .filter(([, score]) => score >= 8)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([host]) => `https://${host}`);
+}
+
 const candidateRoots = (companyName: string, website?: string | null, demandText?: string | null, sourceUrl?: string | null) => {
-  const urls = [website || "", ...(demandText ? extractUrls(demandText) : []), sourceUrl || ""]
+  const urls = [
+    website || "",
+    ...(demandText ? extractUrls(demandText) : []),
+    ...(demandText ? domainsFromText(demandText, companyName) : []),
+    sourceUrl || "",
+  ]
     .map(normalizeUrl)
     .filter(Boolean)
     .filter((url) => {
       const host = hostnameOf(url);
-      return host && !/linkedin\.com|google\.com|mail\.google\.com|seznam\.cz/.test(host);
+      return host && !IGNORED_HOSTS.test(host);
     });
   const guessed = companyNameToDomainCandidate(companyName);
   if (guessed) urls.push(guessed);
