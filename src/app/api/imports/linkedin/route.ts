@@ -172,7 +172,8 @@ function parseLinkedInJobsFromText(text: string, messageId: string, subject = ""
     });
   };
 
-  const subjectMatch = subject.match(/(?:pozici|pozice)\s+(.+?)\s+ve společnosti\s+(.+?)(?:\s+a\s+\d+\s+dalších|,\s+které|$)/i);
+  // Konec názvu firmy v předmětu: "… a 1 další pracovní příležitost", "… a 3 dalších …", ", která/které by vás mohla zajímat"
+  const subjectMatch = subject.match(/(?:pozici|pozice)\s+(.+?)\s+ve společnosti\s+(.+?)(?:\s+a\s+\d+\s+dalš\S*|,\s+kter\S*|$)/i);
   if (subjectMatch) add(subjectMatch[1], subjectMatch[2], "", normalized.slice(0, 1200));
 
   const lines = normalized

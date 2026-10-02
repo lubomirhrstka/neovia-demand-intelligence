@@ -277,6 +277,8 @@ export function isPlausibleCompany(value: string | null | undefined): boolean {
   const v = (value || "").trim();
   if (v.length < 2 || v.length > 160) return false;
   if (/^job title|^firma neuvedena|linkedin$/i.test(v)) return false;
+  // zbytek předmětu LinkedIn e-mailu, ne název firmy
+  if (/která by vás mohla zajímat|které by vás mohly zajímat|might be interested|could be of interest|pracovní příležitost|\ba\s+\d+\s+dalš/i.test(v)) return false;
   if (/https?:|trackingid|refid|%2[a-f0-9]|\/(view|jobs|comm)\//i.test(v)) return false;
   if (v.length > 30 && !v.includes(" ") && /[/?=&]/.test(v)) return false;
   return true;
