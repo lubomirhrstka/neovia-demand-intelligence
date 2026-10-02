@@ -4831,3 +4831,57 @@ button.metric:hover {
 body:has(.modal-backdrop) .mobile-nav-toggle {
   display: none;
 }
+
+/* Seznam firem: poslední kontakt a další krok přímo v řádku */
+.company-relationship {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.company-relationship small {
+  display: block;
+  font-size: 10px;
+  color: #536f70;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.company-relationship small b {
+  display: block;
+  font: 700 8.5px "DM Mono";
+  letter-spacing: 0.3px;
+  color: #8a9c9d;
+  text-transform: uppercase;
+}
+.company-relationship small.overdue,
+.company-relationship small.overdue b {
+  color: #b3261e;
+}
+.company-relationship small.missing {
+  color: #a0712a;
+}
+
+/* Role kontaktu v obchodu */
+.buying-role {
+  display: inline-block;
+  margin: 0 6px 0 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font: 700 9px Manrope;
+  background: #eef4f3;
+  color: #4e6e6c;
+  vertical-align: 1px;
+}
+.buying-role-decision_maker {
+  background: #e2f5ef;
+  color: #08776d;
+}
+.buying-role-purchasing {
+  background: #fff2d6;
+  color: #8a6212;
+}
+.buying-role-technical {
+  background: #e6effa;
+  color: #2a5d93;
+}

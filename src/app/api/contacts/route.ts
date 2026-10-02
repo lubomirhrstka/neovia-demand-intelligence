@@ -34,10 +34,15 @@ async function findOrCreateCompany(db: ReturnType<typeof getDb>, userId: string,
   return company;
 }
 
+const BUYING_ROLES = ["decision_maker", "purchasing", "hr", "technical", "influencer", "user"] as const;
+/** Role kontaktu v nákupním procesu — jen povolené hodnoty, jinak null. */
+const buyingRoleOf = (value: unknown) =>
+  typeof value === "string" && (BUYING_ROLES as readonly string[]).includes(value) ? value : null;
+
 export async function GET() {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
-  const rows = await getDb().select({ id: contacts.id, companyId: contacts.companyId, firstName: contacts.firstName, lastName: contacts.lastName, role: contacts.role, email: contacts.email, secondaryEmail: contacts.secondaryEmail, phone: contacts.phone, secondaryPhone: contacts.secondaryPhone, source: contacts.source, verified: contacts.verified, updatedAt: contacts.updatedAt, company: companies.name, companySource: companies.source }).from(contacts).leftJoin(companies, eq(contacts.companyId, companies.id)).where(eq(contacts.ownerId, user.id)).orderBy(desc(contacts.updatedAt));
+  const rows = await getDb().select({ id: contacts.id, companyId: contacts.companyId, firstName: contacts.firstName, lastName: contacts.lastName, role: contacts.role, buyingRole: contacts.buyingRole, email: contacts.email, secondaryEmail: contacts.secondaryEmail, phone: contacts.phone, secondaryPhone: contacts.secondaryPhone, source: contacts.source, verified: contacts.verified, updatedAt: contacts.updatedAt, company: companies.name, companySource: companies.source }).from(contacts).leftJoin(companies, eq(contacts.companyId, companies.id)).where(eq(contacts.ownerId, user.id)).orderBy(desc(contacts.updatedAt));
   return NextResponse.json(rows);
 }
 
@@ -59,7 +64,7 @@ export async function POST(request: Request) {
   }
   const sourceTag = body.source || "Ručně";
   const company = await findOrCreateCompany(db, user.id, { company: body.company, source: sourceTag });
-  const [created] = await db.insert(contacts).values({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, email: emails[0] || null, secondaryEmail: emails[1] || null, phone: phones[0] || null, secondaryPhone: phones[1] || null, source: sourceTag, companyId: company.id, ownerId: user.id }).returning();
+  const [created] = await db.insert(contacts).values({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, buyingRole: buyingRoleOf(body.buyingRole), email: emails[0] || null, secondaryEmail: emails[1] || null, phone: phones[0] || null, secondaryPhone: phones[1] || null, source: sourceTag, companyId: company.id, ownerId: user.id }).returning();
   await db.insert(auditLog).values({ entityType: "contact", entityId: created.id, action: "created", after: created, actorId: user.id });
   return NextResponse.json({ ...created, company: company.name, companyId: company.id }, { status: 201 });
 }
@@ -86,7 +91,7 @@ export async function PATCH(request: Request) {
   }
   const sourceTag = body.source || current.source || "Ručně";
   const company = await findOrCreateCompany(db, user.id, { company: body.company, source: sourceTag });
-  const [updated] = await db.update(contacts).set({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, email, secondaryEmail, phone, secondaryPhone, source: sourceTag, companyId: company.id, verified: Boolean(body.verified), updatedAt: new Date() }).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).returning();
+  const [updated] = await db.update(contacts).set({ firstName: body.firstName, lastName: body.lastName, role: body.role || null, ...(body.buyingRole !== undefined ? { buyingRole: buyingRoleOf(body.buyingRole) } : {}), email, secondaryEmail, phone, secondaryPhone, source: sourceTag, companyId: company.id, verified: Boolean(body.verified), updatedAt: new Date() }).where(and(eq(contacts.id, body.id), eq(contacts.ownerId, user.id))).returning();
   await db.insert(auditLog).values({ entityType: "contact", entityId: updated.id, action: "updated", before: current, after: updated, actorId: user.id });
   return NextResponse.json({ ...updated, company: company.name, companyId: company.id });
 }

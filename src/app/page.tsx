@@ -46,6 +46,16 @@ import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPic
 import packageInfo from "../../package.json";
 
 const APP_VERSION = packageInfo.version;
+
+/** Role kontaktu v nákupním procesu (B2B) — pomáhá poznat, s kým jednat o čem. */
+const BUYING_ROLE_LABELS: Record<string, string> = {
+  decision_maker: "Rozhoduje",
+  purchasing: "Nákup",
+  hr: "HR / nábor",
+  technical: "Technický garant",
+  influencer: "Ovlivňuje",
+  user: "Uživatel",
+};
 const APP_RELEASE_DATE = process.env.NEXT_PUBLIC_APP_RELEASE_DATE || "2026-09-21";
 
 import { type View, views } from "@/lib/app-types";
@@ -3614,6 +3624,7 @@ function Contacts({
     company: "",
     companyId: "",
     role: "",
+    buyingRole: "",
     email: "",
     secondaryEmail: "",
     phone: "",
@@ -3763,6 +3774,7 @@ function Contacts({
             lastName: string;
             company: string | null;
             role: string | null;
+            buyingRole?: string | null;
             email: string | null;
             secondaryEmail: string | null;
             phone: string | null;
@@ -3777,6 +3789,7 @@ function Contacts({
             name: `${c.firstName} ${c.lastName}`,
             company: c.company || "Nezařazená firma",
             role: c.role || "Nezařazená role",
+            buyingRole: c.buyingRole || null,
             email: c.email || "—",
             secondaryEmail: c.secondaryEmail || "",
             phone: c.phone || "—",
@@ -3850,6 +3863,7 @@ function Contacts({
       company: contact.company,
       companyId: contact.companyId || "",
       role: contact.role === "Nezařazená role" ? "" : contact.role,
+      buyingRole: contact.buyingRole || "",
       email: contact.email === "—" ? "" : contact.email,
       secondaryEmail: contact.secondaryEmail || "",
       phone: contact.phone === "—" ? "" : contact.phone,
@@ -3878,6 +3892,7 @@ function Contacts({
         lastName: words.slice(1).join(" ") || "[DOPLNIT]",
         company: form.company,
         role: form.role,
+        buyingRole: form.buyingRole || null,
         email: form.email,
         secondaryEmail: form.secondaryEmail,
         phone: form.phone,
@@ -4692,6 +4707,9 @@ function Contacts({
                   <b>{c.name}</b>
                   <small>
                     {c.role} · {c.company}
+                    {c.buyingRole && BUYING_ROLE_LABELS[c.buyingRole] && (
+                      <span className={`buying-role buying-role-${c.buyingRole}`}>{BUYING_ROLE_LABELS[c.buyingRole]}</span>
+                    )}
                   </small>
                   <span className="source-tag">{c.source}</span>
                 </div>
@@ -4795,7 +4813,28 @@ function Contacts({
                 <div>
                   <span className="source-tag">{company.source || "Zdroj neuveden"}</span>
                 </div>
-                <small>{companyOpportunities(company).length || company.opportunitiesCount || 0} příležitostí · {new Date(company.updatedAt).toLocaleDateString("cs-CZ")}</small>
+                {(() => {
+                  const lastActivity = companyActivities(company)[0];
+                  const due = company.nextStepDueAt ? new Date(company.nextStepDueAt) : null;
+                  const overdue = Boolean(company.nextStep && due && due.getTime() < Date.now());
+                  return (
+                    <div className="company-relationship">
+                      <small>
+                        <b>Poslední kontakt</b>
+                        {lastActivity
+                          ? `${new Date(lastActivity.occurredAt).toLocaleDateString("cs-CZ")} · ${lastActivity.subject}`
+                          : "Zatím bez kontaktu"}
+                      </small>
+                      <small className={overdue ? "overdue" : company.nextStep ? "" : "missing"}>
+                        <b>Další krok{overdue ? " · po termínu" : ""}</b>
+                        {company.nextStep
+                          ? `${company.nextStep}${due ? ` · ${due.toLocaleDateString("cs-CZ")}` : ""}`
+                          : "Není nastaven"}
+                      </small>
+                      <small>{companyOpportunities(company).length || company.opportunitiesCount || 0} příležitostí</small>
+                    </div>
+                  );
+                })()}
                 {companyDuplicateSignals(company).length > 0 && (
                   <span className="duplicate mini-duplicate">
                     {companyDuplicateSignals(company).length} možná duplicita
@@ -4931,6 +4970,18 @@ function Contacts({
                   />
                 </label>
               ))}
+              <label>
+                Role v obchodu
+                <select
+                  value={form.buyingRole || ""}
+                  onChange={(e) => setForm({ ...form, buyingRole: e.target.value })}
+                >
+                  <option value="">Neurčeno</option>
+                  {Object.entries(BUYING_ROLE_LABELS).map(([value, text]) => (
+                    <option key={value} value={value}>{text}</option>
+                  ))}
+                </select>
+              </label>
               <label className="checkbox-line">
                 <input
                   type="checkbox"
@@ -5211,7 +5262,12 @@ function Contacts({
                         }}
                       >
                         <b>{contact.name}</b>
-                        <small>{contact.role} · {contact.email}</small>
+                        <small>
+                          {contact.buyingRole && BUYING_ROLE_LABELS[contact.buyingRole] && (
+                            <span className={`buying-role buying-role-${contact.buyingRole}`}>{BUYING_ROLE_LABELS[contact.buyingRole]}</span>
+                          )}
+                          {contact.role} · {contact.email}
+                        </small>
                       </button>
                     ))}
                     <button type="button" onClick={() => openCreateForCompany(companyDetail)}>

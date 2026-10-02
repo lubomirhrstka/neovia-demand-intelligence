@@ -44,6 +44,8 @@ export type Contact = {
   name: string;
   company: string;
   role: string;
+  /** role v nákupním procesu: decision_maker | purchasing | hr | technical | influencer | user */
+  buyingRole?: string | null;
   email: string;
   secondaryEmail?: string;
   phone: string;

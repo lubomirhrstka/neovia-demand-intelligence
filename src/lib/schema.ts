@@ -126,6 +126,8 @@ export const contacts = pgTable("contacts", {
   firstName: varchar("first_name", { length: 120 }).notNull(),
   lastName: varchar("last_name", { length: 120 }).notNull(),
   role: varchar("role", { length: 180 }),
+  // role v nákupním procesu: decision_maker | purchasing | hr | technical | influencer | user
+  buyingRole: varchar("buying_role", { length: 40 }),
   email: varchar("email", { length: 255 }),
   secondaryEmail: varchar("secondary_email", { length: 255 }),
   phone: varchar("phone", { length: 50 }),
