@@ -682,6 +682,17 @@
   padding: 22px 28px 28px;
   background: linear-gradient(180deg, #f7faf9 0, #fff 210px);
 }
+.crm-history-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.crm-history-entry small { opacity: .75; }
 .company-detail-scroll .crm-summary,
 .company-detail-scroll .quick-contact-actions,
 .company-detail-scroll .sales-intel-card,

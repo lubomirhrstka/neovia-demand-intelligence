@@ -35,6 +35,7 @@ import { Analytics } from "@/components/analytics";
 import { Pool } from "@/components/Pool";
 import { Title, Metric, Header, Row } from "@/components/dashboard-widgets";
 import { Pipeline } from "@/components/Pipeline";
+import { RelationshipOverview } from "@/components/RelationshipOverview";
 import { Tasks } from "@/components/Tasks";
 import { BookingSettings } from "@/components/BookingSettings";
 import { SavedViewsBar } from "@/components/SavedViewsBar";
@@ -3821,7 +3822,12 @@ function Contacts({
         : d.contactEmail === contact.email || d.company === contact.company,
     );
   const contactActivities = (contact: Contact) =>
-    activities.filter((activity) => activity.contactId === contact.id);
+    activities.filter((activity) => activity.contactId === contact.id).sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
+  const contactCompany = (contact: Contact) => {
+    if (contact.companyId) return companies.find((company) => company.id === contact.companyId);
+    const matches = companies.filter((company) => company.name === contact.company && Boolean(contact.company.trim()));
+    return matches.length === 1 ? matches[0] : undefined;
+  };
   const openCreate = () => {
     setForm(emptyForm);
     setOpen(true);
@@ -3962,8 +3968,12 @@ function Contacts({
     opportunities.filter((opportunity) =>
       opportunity.companyId ? opportunity.companyId === company.id : opportunity.company === company.name,
     );
-  const companyActivities = (company: CompanyRecord) =>
-    activities.filter((activity) => activity.companyId === company.id);
+  const companyActivities = (company: CompanyRecord) => {
+    const contactIds = new Set(companyContacts(company).map((contact) => contact.id));
+    return activities.filter((activity) => activity.companyId === company.id ||
+      (!activity.companyId && Boolean(activity.contactId && contactIds.has(activity.contactId))))
+      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
+  };
   const companyHealth = (company: CompanyRecord) => {
     const companyDemandRows = companyDemands(company);
     const companyContactRows = companyContacts(company);
@@ -4824,6 +4834,19 @@ function Contacts({
                 ×
               </button>
             </header>
+            <div className="modal-scroll company-detail-scroll">
+            {activeDetail && (
+              <RelationshipOverview
+                company={contactCompany(activeDetail)}
+                activities={contactActivities(activeDetail)}
+                opportunities={contactCompany(activeDetail) ? companyOpportunities(contactCompany(activeDetail)!) : []}
+                onCompany={contactCompany(activeDetail) ? () => {
+                  const company = contactCompany(activeDetail);
+                  if (company) { setOpen(false); setDetail(null); openCompanyDetail(company); }
+                } : undefined}
+                onOpportunity={openOpportunity}
+              />
+            )}
             {activeDetail && (
               <div className="crm-summary">
                 <div>
@@ -4936,11 +4959,11 @@ function Contacts({
                   <div className="empty-state">Kontakt zatím nemá zapsanou aktivitu.</div>
                 ) : (
                   contactActivities(activeDetail).map((activity) => (
-                    <button type="button" key={activity.id}>
+                    <div className="crm-history-entry" key={activity.id}>
                       <b>{activity.subject}</b>
                       <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
                       <ActivityNoteLink note={activity.note} />
-                    </button>
+                    </div>
                   ))
                 )}
                 <h3>Navázané poptávky</h3>
@@ -4960,6 +4983,7 @@ function Contacts({
                 </button>
               </article>
             )}
+            </div>
             <footer>
               <button
                 type="button"
@@ -5019,6 +5043,14 @@ function Contacts({
               </button>
             </header>
             <div className="modal-scroll company-detail-scroll">
+            {companyDetail && (
+              <RelationshipOverview
+                company={companyDetail}
+                activities={companyActivities(companyDetail)}
+                opportunities={companyOpportunities(companyDetail)}
+                onOpportunity={openOpportunity}
+              />
+            )}
             {companyDetail && (
               <div className="crm-summary">
                 <div>
@@ -5148,11 +5180,11 @@ function Contacts({
                   <div className="empty-state">Firma zatím nemá zapsanou aktivitu.</div>
                 ) : (
                   companyActivities(companyDetail).map((activity) => (
-                    <button type="button" key={activity.id}>
+                    <div className="crm-history-entry" key={activity.id}>
                       <b>{activity.subject}</b>
                       <small>{activity.type} · {new Date(activity.occurredAt).toLocaleString("cs-CZ")}</small>
                       <ActivityNoteLink note={activity.note} />
-                    </button>
+                    </div>
                   ))
                 )}
                 <h3>Kontakty firmy</h3>

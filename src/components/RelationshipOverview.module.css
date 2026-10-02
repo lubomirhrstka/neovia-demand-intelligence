@@ -1,0 +1,16 @@
+.overview { margin: 16px 24px; padding: 18px; border: 1px solid var(--line, #d5e2e1); border-radius: 14px; color: inherit; min-width: 0; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading h3 { margin: 0; font-size: 16px; }
+.heading button, .opportunities button { color: inherit; background: transparent; border: 1px solid var(--line, #d5e2e1); border-radius: 8px; padding: 10px 12px; cursor: pointer; text-align: left; font: inherit; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.grid article { display: flex; flex-direction: column; gap: 7px; overflow-wrap: anywhere; }
+.grid small, .grid span, .opportunities small { font-size: 12px; opacity: .8; }
+.grid strong { font-size: 14px; }
+.opportunities { border-top: 1px solid var(--line, #d5e2e1); margin-top: 18px; padding-top: 14px; }
+.opportunities summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.opportunities p { font-size: 13px; }
+.opportunities button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; margin-top: 8px; overflow-wrap: anywhere; }
+.opportunities small { flex-shrink: 0; }
+.overview button:hover { background: color-mix(in srgb, currentColor 7%, transparent); }
+.overview button:focus-visible, .opportunities summary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+@media (max-width: 600px) { .overview { margin: 12px; padding: 14px; } .grid { grid-template-columns: 1fr; } .opportunities button { align-items: flex-start; flex-direction: column; } }
