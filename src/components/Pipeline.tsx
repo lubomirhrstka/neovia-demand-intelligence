@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { FileBarChart, Plus, Search } from "lucide-react";
 import { goTo, localDateKey, downloadCsv } from "@/lib/app-helpers";
@@ -7,7 +8,10 @@ import type { ActivityRecord, TaskRecord } from "@/lib/app-types";
 import { Title } from "@/components/dashboard-widgets";
 import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
 import {
+  ACTIVE_STAGES,
+  CLOSED_STAGES,
   MISSING_LABELS,
+  PIPELINE_STAGES,
   daysInStage,
   isNextStepOverdue,
   isStagnating,
@@ -175,6 +179,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
   };
   const [gate, setGate] = useState<StageGate | null>(null);
   const todayKey = localDateKey(new Date());
+  const isClosed = (stage: string) => (CLOSED_STAGES as string[]).includes(stage);
   const sources = [...new Set(rows.map((x) => x.source || "Zdroj neuveden"))].sort();
   const openOpportunityTasks = opportunityTasks.filter((task) => task.status !== "done");
   const stageLabel = (stage: string) =>
@@ -202,8 +207,9 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
       text.includes(pipelineQuery.toLowerCase()) &&
       (pipelineKind === "vše" || (item.pipeline || "sales") === pipelineKind) &&
       (pipelineArchiveFilter === "vše" ||
-        (pipelineArchiveFilter === "aktivní" && item.stage !== "lost") ||
-        (pipelineArchiveFilter === "lost" && item.stage === "lost")) &&
+        (pipelineArchiveFilter === "aktivní" && !isClosed(item.stage)) ||
+        (pipelineArchiveFilter === "uzavřené" && isClosed(item.stage)) ||
+        pipelineArchiveFilter === item.stage) &&
       (pipelineSource === "vše" || (item.source || "Zdroj neuveden") === pipelineSource) &&
       Number(item.probability || 0) >= Number(minProbability || 0) &&
       (nextStepFilter === "vše" ||
@@ -327,8 +333,8 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
       nextStepDueAt: item.nextStepDueAt,
       closeReason: item.closeReason,
     });
-    // u LOST se důvod potvrzuje vždy — slouží i jako potvrzení akce
-    if (stage === "lost" && !missing.includes("closeReason")) missing.push("closeReason");
+    // u uzavření (vyhráno / LOST) se důvod potvrzuje vždy — slouží i jako potvrzení akce
+    if (isClosed(stage) && !missing.includes("closeReason")) missing.push("closeReason");
     if (missing.length) {
       openGate(item, stage, missing, extra, after);
       return;
@@ -392,6 +398,20 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     setDragged(null);
     if (!original || original.stage === stage) return;
     await requestStage(original, stage);
+  };
+  const markSelectedWon = async () => {
+    if (!selected) return;
+    const item = rows.find((x) => x.id === selected.id);
+    if (!item) return;
+    await requestStage(
+      item,
+      "won",
+      { probability: 100, nextStep: selected.nextStep || "Uzavřeno jako vyhráno", note: selected.note, source: selected.source },
+      () => {
+        setSelected(null);
+        setPipelineArchiveFilter("won");
+      },
+    );
   };
   const markSelectedLost = async () => {
     if (!selected) return;
@@ -490,12 +510,19 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
         : "Aktivita byla uložena k obchodnímu případu.",
     );
   };
-  const cols: [string, string][] = [
-    ["Identifikace", "identified"],
-    ["Kvalifikace", "qualified"],
-    ["Nabídka", "proposal"],
-    ["Vyjednávání", "negotiation"],
-  ];
+  const boardKind: PipelineKind = pipelineKind === "career" ? "career" : "sales";
+  const baseStages: string[] =
+    boardKind === "career"
+      ? PIPELINE_STAGES.career.map((x) => x.id).filter((id) => !isClosed(id))
+      : ["identified", "qualified", "proposal", "negotiation"];
+  // fáze mimo základní sadu se ukážou, jakmile v nich leží případ — nic se neschová
+  const boardStages = (ACTIVE_STAGES as string[]).filter(
+    (id) => baseStages.includes(id) || filteredRows.some((x) => x.stage === id),
+  );
+  const cols: [string, string][] = boardStages.map((id) => [stageLabelFor(boardKind, id), id]);
+  const archiveRows = filteredRows.filter((item) => isClosed(item.stage));
+  const archiveTitle =
+    pipelineArchiveFilter === "won" ? "Archiv vyhraných" : pipelineArchiveFilter === "lost" ? "Archiv LOST" : "Uzavřené případy";
   return (
     <>
       <Title
@@ -545,8 +572,10 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
         </select>
         <select value={pipelineArchiveFilter} onChange={(e) => setPipelineArchiveFilter(e.target.value)}>
           <option value="aktivní">Jen aktivní Pipeline</option>
+          <option value="won">Archiv vyhraných</option>
           <option value="lost">Archiv LOST</option>
-          <option value="vše">Aktivní i LOST</option>
+          <option value="uzavřené">Všechny uzavřené</option>
+          <option value="vše">Aktivní i uzavřené</option>
         </select>
         <select value={pipelineKind} onChange={(e) => setPipelineKind(e.target.value)}>
           <option value="vše">Obchod i kariéra</option>
@@ -574,46 +603,56 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
         <article className={filteredRows.some((item) => openOpportunityTasks.some((task) => task.opportunityId === item.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey)) ? "warn" : ""}>
           <b>
             {
-              filteredRows.filter((item) =>
-                openOpportunityTasks.some((task) => task.opportunityId === item.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey),
+              filteredRows.filter(
+                (item) =>
+                  !isClosed(item.stage) &&
+                  (isNextStepOverdue(item.nextStepDueAt) ||
+                    openOpportunityTasks.some((task) => task.opportunityId === item.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey)),
               ).length
             }
           </b>
           <small>případů po termínu</small>
         </article>
         <article className="warn">
-          <b>{rows.filter((item) => item.stage === "lost").length}</b>
-          <small>LOST archiv</small>
+          <b>
+            {rows.filter((item) => item.stage === "won").length} / {rows.filter((item) => item.stage === "lost").length}
+          </b>
+          <small>vyhráno / LOST</small>
         </article>
       </div>
       {pipelineArchiveFilter !== "aktivní" && (
         <section className="panel lost-archive">
           <header>
             <div>
-              <b>Archiv LOST</b>
-              <small>Ztracené obchodní případy zůstávají v reportech a exportech.</small>
+              <b>{archiveTitle}</b>
+              <small>Uzavřené obchodní případy zůstávají v reportech a exportech.</small>
             </div>
-            <span>{filteredRows.filter((item) => item.stage === "lost").length}</span>
+            <span>{archiveRows.length}</span>
           </header>
-          {filteredRows.filter((item) => item.stage === "lost").length === 0 ? (
-            <div className="empty-state">V tomto filtru není žádný LOST případ.</div>
+          {archiveRows.length === 0 ? (
+            <div className="empty-state">V tomto filtru není žádný uzavřený případ.</div>
           ) : (
-            filteredRows
-              .filter((item) => item.stage === "lost")
-              .map((item) => (
-                <button className="archive-row" type="button" key={item.id} onClick={() => openDetail(item)}>
-                  <span>
-                    <b>{item.company || "Firma"}</b>
-                    <small>{item.title}</small>
-                  </span>
-                  <span>{item.source || "Zdroj neuveden"}</span>
-                  <span>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("cs-CZ") : "bez data"}</span>
-                </button>
-              ))
+            archiveRows.map((item) => (
+              <button className="archive-row" type="button" key={item.id} onClick={() => openDetail(item)}>
+                <span>
+                  <b>{item.company || "Firma"}</b>
+                  <small>{item.title}</small>
+                </span>
+                <span>
+                  {stageName(item, item.stage)}
+                  {item.closeReason ? ` · ${item.closeReason}` : ""}
+                </span>
+                <span>
+                  {item.stageChangedAt || item.updatedAt
+                    ? new Date((item.stageChangedAt || item.updatedAt) as string).toLocaleDateString("cs-CZ")
+                    : "bez data"}
+                </span>
+              </button>
+            ))
           )}
         </section>
       )}
-      <div className="pipeline">
+      <div className="pipeline" style={{ "--pipeline-cols": cols.length } as CSSProperties}>
         {cols.map(([label, stage]) => (
           <section
             key={stage}
@@ -956,7 +995,12 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
               </section>
             </div>
             <footer>
-              {selected.stage !== "lost" && (
+              {!isClosed(selected.stage) && (
+                <button type="button" className="secondary" onClick={markSelectedWon}>
+                  Označit jako vyhráno
+                </button>
+              )}
+              {!isClosed(selected.stage) && (
                 <button
                   type="button"
                   className="danger-secondary"
@@ -988,8 +1032,20 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
           >
             <header>
               <div>
-                <p>{gate.stage === "lost" ? "UZAVŘÍT JAKO LOST" : `PŘESUN DO FÁZE ${gate.label.toUpperCase()}`}</p>
-                <h2>{gate.stage === "lost" ? "Proč případ končí?" : "Doplňte údaje pro tuto fázi"}</h2>
+                <p>
+                  {gate.stage === "lost"
+                    ? "UZAVŘÍT JAKO LOST"
+                    : gate.stage === "won"
+                      ? "UZAVŘÍT JAKO VYHRÁNO"
+                      : `PŘESUN DO FÁZE ${gate.label.toUpperCase()}`}
+                </p>
+                <h2>
+                  {gate.stage === "lost"
+                    ? "Proč případ končí?"
+                    : gate.stage === "won"
+                      ? "Co rozhodlo o výhře?"
+                      : "Doplňte údaje pro tuto fázi"}
+                </h2>
               </div>
               <button type="button" onClick={() => setGate(null)}>
                 ×
@@ -1038,7 +1094,13 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                   <input
                     autoFocus
                     value={gate.values.closeReason}
-                    placeholder={gate.stage === "lost" ? "např. vybrali jiného dodavatele, nemají rozpočet" : ""}
+                    placeholder={
+                      gate.stage === "lost"
+                        ? "např. vybrali jiného dodavatele, nemají rozpočet"
+                        : gate.stage === "won"
+                          ? "např. reference z bankovnictví, rychlé nasazení týmu"
+                          : ""
+                    }
                     onChange={(e) => setGate({ ...gate, values: { ...gate.values, closeReason: e.target.value } })}
                   />
                 </label>
@@ -1049,7 +1111,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                 Zrušit
               </button>
               <button className={gate.stage === "lost" ? "danger-secondary" : "primary"}>
-                {gate.stage === "lost" ? "Uzavřít jako LOST" : "Uložit a přesunout"}
+                {gate.stage === "lost" ? "Uzavřít jako LOST" : gate.stage === "won" ? "Uzavřít jako vyhráno" : "Uložit a přesunout"}
               </button>
             </footer>
           </form>
