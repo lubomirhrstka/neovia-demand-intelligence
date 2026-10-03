@@ -263,7 +263,7 @@ export default function Home() {
                     >
                       <b>{item.company || item.title}</b>
                       <small>{item.title}</small>
-                      <span className={item.reason === "po termínu" ? "warning" : ""}>{item.reason}</span>
+                      <span className={item.kind === "no-next-step" ? "" : "warning"}>{item.reason}</span>
                     </button>
                   ))
                 )}
