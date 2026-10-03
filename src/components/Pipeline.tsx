@@ -6,6 +6,24 @@ import { goTo, localDateKey, downloadCsv } from "@/lib/app-helpers";
 import type { ActivityRecord, TaskRecord } from "@/lib/app-types";
 import { Title } from "@/components/dashboard-widgets";
 import { ExportFieldPicker, type ExportField } from "@/components/ExportFieldPicker";
+import {
+  MISSING_LABELS,
+  daysInStage,
+  isNextStepOverdue,
+  isStagnating,
+  missingForStage,
+  stageLabelFor,
+  type MissingField,
+  type PipelineKind,
+} from "@/lib/pipeline-rules";
+
+/** ISO čas → hodnota pro <input type="datetime-local"> v místním čase */
+const toLocalInput = (value?: string | null) => {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
 
 const ActivityNoteLink = ({ note }: { note?: string | null }) => {
   if (!note) return null;
@@ -47,6 +65,10 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
         probability: number;
         expectedCloseDate: string | null;
         nextStep: string | null;
+        nextStepDueAt: string | null;
+        stageChangedAt: string | null;
+        closeReason: string | null;
+        pipeline: string | null;
         note: string | null;
         source: string | null;
         updatedAt: string | null;
@@ -61,6 +83,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     [minProbability, setMinProbability] = useState("0"),
     [nextStepFilter, setNextStepFilter] = useState("vše"),
     [pipelineArchiveFilter, setPipelineArchiveFilter] = useState("aktivní"),
+    [pipelineKind, setPipelineKind] = useState("vše"),
     [form, setForm] = useState({
       title: "",
       company: "",
@@ -75,7 +98,9 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
       expectedCloseDate: item.expectedCloseDate
         ? item.expectedCloseDate.slice(0, 10)
         : "",
-      nextStepDueAt: "",
+      nextStepDueAt: toLocalInput(item.nextStepDueAt),
+      _origNextStep: item.nextStep || "",
+      _origNextStepDueAt: toLocalInput(item.nextStepDueAt),
     });
   const openPipelineCompany = () => {
     if (!selected?.companyId && !selected?.company) {
@@ -138,6 +163,17 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     priority: "2",
   };
   const [activityForm, setActivityForm] = useState(emptyActivityForm);
+  type StageGate = {
+    id: string;
+    stage: string;
+    label: string;
+    taskTitle: string;
+    missing: MissingField[];
+    values: { nextStep: string; nextStepDueAt: string; valueCzk: string; closeReason: string };
+    extra: Record<string, unknown>;
+    after?: () => void;
+  };
+  const [gate, setGate] = useState<StageGate | null>(null);
   const todayKey = localDateKey(new Date());
   const sources = [...new Set(rows.map((x) => x.source || "Zdroj neuveden"))].sort();
   const openOpportunityTasks = opportunityTasks.filter((task) => task.status !== "done");
@@ -164,6 +200,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     });
     return (
       text.includes(pipelineQuery.toLowerCase()) &&
+      (pipelineKind === "vše" || (item.pipeline || "sales") === pipelineKind) &&
       (pipelineArchiveFilter === "vše" ||
         (pipelineArchiveFilter === "aktivní" && item.stage !== "lost") ||
         (pipelineArchiveFilter === "lost" && item.stage === "lost")) &&
@@ -172,7 +209,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
       (nextStepFilter === "vše" ||
         (nextStepFilter === "má další krok" && hasNextStep) ||
         (nextStepFilter === "bez dalšího kroku" && !hasNextStep) ||
-        (nextStepFilter === "po termínu" && hasOverdueTask))
+        (nextStepFilter === "po termínu" && (hasOverdueTask || isNextStepOverdue(item.nextStepDueAt))))
     );
   });
   const weightedPipelineValue = filteredRows.reduce(
@@ -242,65 +279,160 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     load();
     note("Obchodní případ byl uložen.");
   };
+  const stageName = (item: { pipeline?: string | null }, stage: string) =>
+    stageLabelFor((item.pipeline === "career" ? "career" : "sales") as PipelineKind, stage);
+  const patchStage = async (id: string, stage: string, payload: Record<string, unknown>) => {
+    const r = await fetch("/api/opportunities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, id, stage }),
+    });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data };
+  };
+  const openGate = (
+    item: (typeof rows)[number],
+    stage: string,
+    missing: MissingField[],
+    extra: Record<string, unknown>,
+    after?: () => void,
+  ) =>
+    setGate({
+      id: item.id,
+      stage,
+      label: stageName(item, stage),
+      taskTitle: `${item.company || item.title}`,
+      missing,
+      values: {
+        nextStep: item.nextStep || "",
+        nextStepDueAt: toLocalInput(item.nextStepDueAt),
+        valueCzk: item.valueCzk ? String(item.valueCzk) : "",
+        closeReason: item.closeReason || "",
+      },
+      extra,
+      after,
+    });
+  /** Posun do fáze: když chybí povinné údaje, nejdřív se na ně zeptá. */
+  const requestStage = async (
+    item: (typeof rows)[number],
+    stage: string,
+    extra: Record<string, unknown> = {},
+    after?: () => void,
+  ) => {
+    const missing = missingForStage({
+      stage,
+      pipeline: item.pipeline,
+      valueCzk: item.valueCzk,
+      nextStep: item.nextStep,
+      nextStepDueAt: item.nextStepDueAt,
+      closeReason: item.closeReason,
+    });
+    // u LOST se důvod potvrzuje vždy — slouží i jako potvrzení akce
+    if (stage === "lost" && !missing.includes("closeReason")) missing.push("closeReason");
+    if (missing.length) {
+      openGate(item, stage, missing, extra, after);
+      return;
+    }
+    setRows((prev) => prev.map((x) => (x.id === item.id ? { ...x, stage, stageChangedAt: new Date().toISOString() } : x)));
+    const res = await patchStage(item.id, stage, extra);
+    if (res.status === 422 && Array.isArray(res.data.missing)) {
+      load();
+      openGate(item, stage, res.data.missing, extra, after);
+      return;
+    }
+    if (!res.ok) {
+      load();
+      note(res.data.error || "Přesun se nepodařilo uložit.");
+      return;
+    }
+    load();
+    note(`Případ přesunut do fáze ${stageName(item, stage)}.`);
+    after?.();
+  };
+  const submitGate = async () => {
+    if (!gate) return;
+    const v = gate.values;
+    const empty = gate.missing.filter((m) => !String(v[m] || "").trim());
+    if (empty.length) {
+      note(`Doplňte: ${empty.map((m) => MISSING_LABELS[m]).join(", ")}.`);
+      return;
+    }
+    const payload: Record<string, unknown> = { ...gate.extra };
+    if (gate.missing.includes("nextStep")) payload.nextStep = v.nextStep.trim();
+    if (gate.missing.includes("nextStepDueAt")) payload.nextStepDueAt = new Date(v.nextStepDueAt).toISOString();
+    if (gate.missing.includes("valueCzk")) payload.valueCzk = v.valueCzk;
+    if (gate.missing.includes("closeReason")) payload.closeReason = v.closeReason.trim();
+    const res = await patchStage(gate.id, gate.stage, payload);
+    if (!res.ok) {
+      note(res.data.error || "Přesun se nepodařilo uložit.");
+      return;
+    }
+    // nový termín dalšího kroku → úkol, stejně jako v detailu případu
+    if (gate.missing.includes("nextStepDueAt")) {
+      await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${v.nextStep.trim()}: ${gate.taskTitle}`,
+          dueAt: new Date(v.nextStepDueAt).toISOString(),
+          priority: 2,
+          opportunityId: gate.id,
+        }),
+      }).catch(() => null);
+    }
+    const done = gate;
+    setGate(null);
+    load();
+    note(`Případ přesunut do fáze ${done.label}.`);
+    done.after?.();
+  };
   const move = async (stage: string) => {
     if (!dragged) return;
     const original = rows.find((x) => x.id === dragged);
-    if (!original || original.stage === stage) {
-      setDragged(null);
-      return;
-    }
-    setRows(rows.map((x) => (x.id === dragged ? { ...x, stage } : x)));
     setDragged(null);
-    const r = await fetch("/api/opportunities", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: original.id, stage }),
-    });
-    if (!r.ok) {
-      load();
-      note("Přesun se nepodařilo uložit.");
-      return;
-    }
-    note(`Případ přesunut do fáze ${cols.find((x) => x[1] === stage)?.[0]}.`);
+    if (!original || original.stage === stage) return;
+    await requestStage(original, stage);
   };
   const markSelectedLost = async () => {
     if (!selected) return;
-    const confirmed = window.confirm(
-      "Opravdu chcete označit tento obchodní případ jako LOST? Přesune se do archivu LOST a v běžné Pipeline se nebude zobrazovat.",
-    );
-    if (!confirmed) return;
-    const r = await fetch("/api/opportunities", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: selected.id,
-        stage: "lost",
+    const item = rows.find((x) => x.id === selected.id);
+    if (!item) return;
+    await requestStage(
+      item,
+      "lost",
+      {
         probability: 0,
         nextStep: selected.nextStep || "Uzavřeno jako LOST",
         note: selected.note,
         source: selected.source,
-      }),
-    });
-    if (!r.ok) {
-      note("Případ se nepodařilo označit jako LOST.");
-      return;
-    }
-    setSelected(null);
-    setPipelineArchiveFilter("lost");
-    load();
-    note("Případ byl přesunut do archivu LOST.");
+      },
+      () => {
+        setSelected(null);
+        setPipelineArchiveFilter("lost");
+      },
+    );
   };
   const saveDetail = async () => {
+    const payload = {
+      ...selected,
+      nextStepDueAt: selected.nextStepDueAt ? new Date(selected.nextStepDueAt).toISOString() : null,
+    };
+    delete payload._origNextStep;
+    delete payload._origNextStepDueAt;
+    const nextStepChanged =
+      (selected.nextStep || "") !== selected._origNextStep ||
+      (selected.nextStepDueAt || "") !== selected._origNextStepDueAt;
     const r = await fetch("/api/opportunities", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selected),
+      body: JSON.stringify(payload),
     });
     if (!r.ok) {
-      note("Detail se nepodařilo uložit.");
+      const err = await r.json().catch(() => ({}));
+      note(err.error || "Detail se nepodařilo uložit.");
       return;
     }
-    if (selected.nextStep && selected.nextStepDueAt) {
+    if (selected.nextStep && selected.nextStepDueAt && nextStepChanged) {
       const taskResponse = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -319,7 +451,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     setSelected(null);
     load();
     note(
-      selected.nextStep && selected.nextStepDueAt
+      selected.nextStep && selected.nextStepDueAt && nextStepChanged
         ? "Obchodní případ byl aktualizován a další krok je v úkolech."
         : "Obchodní případ byl aktualizován.",
     );
@@ -416,6 +548,11 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
           <option value="lost">Archiv LOST</option>
           <option value="vše">Aktivní i LOST</option>
         </select>
+        <select value={pipelineKind} onChange={(e) => setPipelineKind(e.target.value)}>
+          <option value="vše">Obchod i kariéra</option>
+          <option value="sales">Jen obchod</option>
+          <option value="career">Jen moje kariéra</option>
+        </select>
         <button onClick={() => setExportOpen(true)}>
           <FileBarChart size={16} />
           Export
@@ -503,10 +640,15 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                   <h3>{x.company || "Firma"}</h3>
                   <p>{x.title}</p>
                   <span className="source-tag">{x.source || "Zdroj neuveden"}</span>
+                  {x.pipeline === "career" && <span className="source-tag">Moje kariéra</span>}
+                  {isStagnating(x.stage, x.stageChangedAt) && (
+                    <span className="pipeline-warning">stagnuje {daysInStage(x.stageChangedAt)} dní</span>
+                  )}
                   {!x.nextStep && !openOpportunityTasks.some((task) => task.opportunityId === x.id) && (
                     <span className="pipeline-warning">bez dalšího kroku</span>
                   )}
-                  {openOpportunityTasks.some((task) => task.opportunityId === x.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey) && (
+                  {(isNextStepOverdue(x.nextStepDueAt) ||
+                    openOpportunityTasks.some((task) => task.opportunityId === x.id && task.dueAt && localDateKey(new Date(task.dueAt)) < todayKey)) && (
                     <span className="pipeline-warning">po termínu</span>
                   )}
                   <footer>
@@ -515,6 +657,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                         ? `${x.valueCzk.toLocaleString("cs-CZ")} Kč`
                         : `${x.probability} %`}
                     </b>
+                    <small title="Dní v aktuální fázi">{daysInStage(x.stageChangedAt)} d ve fázi</small>
                     <span className="avatar soft">LH</span>
                   </footer>
                 </article>
@@ -692,6 +835,15 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                     }
                   />
                 </label>
+                {(selected.stage === "won" || selected.stage === "lost") && (
+                  <label>
+                    Důvod uzavření
+                    <input
+                      value={selected.closeReason || ""}
+                      onChange={(e) => setSelected({ ...selected, closeReason: e.target.value })}
+                    />
+                  </label>
+                )}
                 <label>
                   Poznámka z jednání
                   <textarea
@@ -821,6 +973,84 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
                 Zavřít
               </button>
               <button className="primary">Uložit změny</button>
+            </footer>
+          </form>
+        </div>
+      )}
+      {gate && (
+        <div className="modal-backdrop">
+          <form
+            className="modal"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitGate();
+            }}
+          >
+            <header>
+              <div>
+                <p>{gate.stage === "lost" ? "UZAVŘÍT JAKO LOST" : `PŘESUN DO FÁZE ${gate.label.toUpperCase()}`}</p>
+                <h2>{gate.stage === "lost" ? "Proč případ končí?" : "Doplňte údaje pro tuto fázi"}</h2>
+              </div>
+              <button type="button" onClick={() => setGate(null)}>
+                ×
+              </button>
+            </header>
+            <div className="form-grid">
+              {gate.missing.includes("nextStep") && (
+                <label>
+                  Další krok
+                  <select
+                    value={gate.values.nextStep}
+                    onChange={(e) => setGate({ ...gate, values: { ...gate.values, nextStep: e.target.value } })}
+                  >
+                    <option value="">Vyberte další krok</option>
+                    {[...new Set([gate.values.nextStep, ...nextStepOptions].filter(Boolean))].map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {gate.missing.includes("nextStepDueAt") && (
+                <label>
+                  Termín dalšího kroku
+                  <input
+                    type="datetime-local"
+                    value={gate.values.nextStepDueAt}
+                    onChange={(e) => setGate({ ...gate, values: { ...gate.values, nextStepDueAt: e.target.value } })}
+                  />
+                </label>
+              )}
+              {gate.missing.includes("valueCzk") && (
+                <label>
+                  Hodnota obchodu Kč
+                  <input
+                    type="number"
+                    value={gate.values.valueCzk}
+                    onChange={(e) => setGate({ ...gate, values: { ...gate.values, valueCzk: e.target.value } })}
+                  />
+                </label>
+              )}
+              {gate.missing.includes("closeReason") && (
+                <label>
+                  Důvod uzavření
+                  <input
+                    autoFocus
+                    value={gate.values.closeReason}
+                    placeholder={gate.stage === "lost" ? "např. vybrali jiného dodavatele, nemají rozpočet" : ""}
+                    onChange={(e) => setGate({ ...gate, values: { ...gate.values, closeReason: e.target.value } })}
+                  />
+                </label>
+              )}
+            </div>
+            <footer>
+              <button type="button" className="secondary" onClick={() => setGate(null)}>
+                Zrušit
+              </button>
+              <button className={gate.stage === "lost" ? "danger-secondary" : "primary"}>
+                {gate.stage === "lost" ? "Uzavřít jako LOST" : "Uložit a přesunout"}
+              </button>
             </footer>
           </form>
         </div>

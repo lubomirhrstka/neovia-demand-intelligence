@@ -170,6 +170,13 @@ export const opportunities = pgTable("opportunities", {
   probability: integer("probability").notNull().default(0),
   expectedCloseDate: timestamp("expected_close_date"),
   nextStep: text("next_step"),
+  nextStepDueAt: timestamp("next_step_due_at"),
+  /** kdy případ vstoupil do aktuální fáze — pro dobu ve fázi a upozornění na stagnaci */
+  stageChangedAt: timestamp("stage_changed_at").notNull().defaultNow(),
+  /** důvod výhry / prohry */
+  closeReason: text("close_reason"),
+  /** "sales" = obchod, "career" = moje kariéra */
+  pipeline: varchar("pipeline", { length: 20 }).notNull().default("sales"),
   note: text("note"),
   source: varchar("source", { length: 100 }),
   companyId: uuid("company_id").references(() => companies.id),

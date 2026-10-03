@@ -5,6 +5,7 @@ import { companies, contacts, demands, opportunities } from "@/lib/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { MISSING_LABELS, missingForStage } from "@/lib/pipeline-rules";
 async function user() {
   return (await auth.api.getSession({ headers: await headers() }))?.user;
 }
@@ -24,6 +25,10 @@ export async function GET() {
       probability: opportunities.probability,
       expectedCloseDate: opportunities.expectedCloseDate,
       nextStep: opportunities.nextStep,
+      nextStepDueAt: opportunities.nextStepDueAt,
+      stageChangedAt: opportunities.stageChangedAt,
+      closeReason: opportunities.closeReason,
+      pipeline: opportunities.pipeline,
       note: opportunities.note,
       source: opportunities.source,
       companyId: opportunities.companyId,
@@ -124,6 +129,16 @@ export async function POST(req: Request) {
       companyId: company.id,
       contactId: sourceDemand?.contactId || null,
       demandId: b.demandId || null,
+      // LinkedIn alerty jsou pracovní nabídky pro mě → pipeline "Moje kariéra"; ostatní zdroje = obchod
+      pipeline:
+        b.pipeline === "career" || b.pipeline === "sales"
+          ? b.pipeline
+          : /linkedin/i.test(sourceDemand?.source || sourceTag || "")
+            ? "career"
+            : "sales",
+      nextStep: b.nextStep?.trim() || null,
+      nextStepDueAt: b.nextStepDueAt ? new Date(b.nextStepDueAt) : null,
+      stageChangedAt: new Date(),
       ownerId: actor.id,
     })
     .returning();
@@ -155,8 +170,43 @@ export async function PATCH(req: Request) {
       { error: "Neplatná fáze pipeline." },
       { status: 400 },
     );
+  const db = getDb();
+  const [current] = await db
+    .select()
+    .from(opportunities)
+    .where(and(eq(opportunities.id, b.id), eq(opportunities.ownerId, actor.id)))
+    .limit(1);
+  if (!current)
+    return NextResponse.json({ error: "Případ nebyl nalezen." }, { status: 404 });
+  const stageChanges = Boolean(b.stage && b.stage !== current.stage);
+  if (stageChanges) {
+    // Pravidla pipeline: do fáze lze případ posunout jen s potřebnými údaji
+    const merged = {
+      stage: b.stage,
+      pipeline: b.pipeline ?? current.pipeline,
+      valueCzk: b.valueCzk !== undefined ? Number(b.valueCzk) || null : current.valueCzk,
+      nextStep: b.nextStep !== undefined ? b.nextStep : current.nextStep,
+      nextStepDueAt: b.nextStepDueAt !== undefined ? b.nextStepDueAt : current.nextStepDueAt,
+      closeReason: b.closeReason !== undefined ? b.closeReason : current.closeReason,
+    };
+    const missing = missingForStage(merged);
+    if (missing.length)
+      return NextResponse.json(
+        {
+          error: `Pro tuto fázi doplňte: ${missing.map((m) => MISSING_LABELS[m]).join(", ")}.`,
+          missing,
+        },
+        { status: 422 },
+      );
+  }
   const values = {
     ...(b.stage ? { stage: b.stage } : {}),
+    ...(stageChanges ? { stageChangedAt: new Date() } : {}),
+    ...(b.nextStepDueAt !== undefined
+      ? { nextStepDueAt: b.nextStepDueAt ? new Date(b.nextStepDueAt) : null }
+      : {}),
+    ...(b.closeReason !== undefined ? { closeReason: b.closeReason?.trim() || null } : {}),
+    ...(b.pipeline === "sales" || b.pipeline === "career" ? { pipeline: b.pipeline } : {}),
     ...(b.valueCzk !== undefined
       ? { valueCzk: Number(b.valueCzk) || null }
       : {}),
@@ -175,7 +225,7 @@ export async function PATCH(req: Request) {
     ...(b.source !== undefined ? { source: b.source || null } : {}),
     updatedAt: new Date(),
   };
-  const [item] = await getDb()
+  const [item] = await db
     .update(opportunities)
     .set(values)
     .where(and(eq(opportunities.id, b.id), eq(opportunities.ownerId, actor.id)))
