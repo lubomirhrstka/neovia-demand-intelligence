@@ -80,6 +80,7 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     >([]),
     [open, setOpen] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- rozpracovaný formulář detailu (řádek + pomocná pole)
     [selected, setSelected] = useState<any>(null),
     [dragged, setDragged] = useState<string | null>(null),
     [pipelineQuery, setPipelineQuery] = useState(""),
@@ -128,6 +129,8 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
     setSelected(null);
     goTo("Úkoly");
   };
+  const [opportunityActivities, setOpportunityActivities] = useState<ActivityRecord[]>([]);
+  const [opportunityTasks, setOpportunityTasks] = useState<TaskRecord[]>([]);
   const load = () =>
     Promise.all([
       fetch("/api/opportunities").then((r) => (r.ok ? r.json() : [])),
@@ -155,8 +158,6 @@ export function Pipeline({ note }: { note: (s: string) => void }) {
   useEffect(() => {
     load();
   }, []);
-  const [opportunityActivities, setOpportunityActivities] = useState<ActivityRecord[]>([]);
-  const [opportunityTasks, setOpportunityTasks] = useState<TaskRecord[]>([]);
   const emptyActivityForm = {
     type: "call",
     subject: "",

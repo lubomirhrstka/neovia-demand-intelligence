@@ -35,6 +35,7 @@ type PipelineMetrics = {
 };
 
 export function Analytics() {
+  const [now] = useState(() => Date.now());
   const [demands, setDemands] = useState<ImportedDemand[]>([]);
   const [opportunities, setOpportunities] = useState<DashboardOpportunity[]>([]);
   const [metrics, setMetrics] = useState<PipelineMetrics | null>(null);
@@ -127,7 +128,7 @@ export function Analytics() {
 
   const roleCounts = Array.from(
     (roleRangeMonth
-      ? demands.filter((d) => d.importedAt && new Date(d.importedAt).getTime() >= Date.now() - 30 * 24 * 60 * 60 * 1000)
+      ? demands.filter((d) => d.importedAt && new Date(d.importedAt).getTime() >= now - 30 * 24 * 60 * 60 * 1000)
       : demands
     )
       .reduce((map, demand) => {

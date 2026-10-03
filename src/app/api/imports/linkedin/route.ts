@@ -265,7 +265,8 @@ export async function POST(request: Request) {
   const [settings] = await db.select().from(monitorSettings).where(eq(monitorSettings.ownerId, session.user.id)).orderBy(desc(monitorSettings.updatedAt)).limit(1);
   const keywords = settings?.keywords?.length ? settings.keywords : ["IT Security", "Cybersecurity", "Security Officer", "NIS2", "GDPR", "Incident Response", "SOC Manager"];
 
-  let found = 0, created = 0, updated = 0, skipped = 0, webVerified = 0;
+  let found = 0, created = 0, skipped = 0, webVerified = 0;
+  const updated = 0;
   const warnings: string[] = [];
   const allCompanies = await db.select().from(companies).where(eq(companies.ownerId, session.user.id));
   const MAX_AUTO_VERIFY = 6;

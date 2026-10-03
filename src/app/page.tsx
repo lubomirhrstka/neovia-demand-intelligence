@@ -431,8 +431,8 @@ function ThemeSettings({ note }: { note: (s: string) => void }) {
     try {
       window.localStorage.setItem("leadhunter-theme", id);
     } catch {}
-    if (id === "default") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = id;
+    if (id === "default") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", id);
     note(`Zobrazení změněno: ${THEMES.find((t) => t.id === id)?.label}.`);
   };
   return (
@@ -595,7 +595,7 @@ function AccountSettings({
           </button>
           {gmailStatus?.connected && (
             <p style={{ fontSize: 11, color: "#657d7f", marginTop: -10, marginBottom: 16 }}>
-              Nedávno přibylo oprávnění pro trvalé mazání v koši — pokud mazání v Koši hlásí chybu, klikněte na „Znovu připojit Gmail" a v Google okně potvrďte nová oprávnění.
+              Nedávno přibylo oprávnění pro trvalé mazání v koši — pokud mazání v Koši hlásí chybu, klikněte na „Znovu připojit Gmail“ a v Google okně potvrďte nová oprávnění.
             </p>
           )}
           <div className="form-grid email-settings-grid">
@@ -3855,7 +3855,7 @@ function Contacts({
     setCompanyDetail(null);
     setOpen(true);
   };
-  const openDetail = (contact: Contact) => {
+  function openDetail(contact: Contact) {
     setDetail(contact);
     setForm({
       id: contact.id,
@@ -4183,7 +4183,7 @@ function Contacts({
     setCompanyDetail(null);
     setCompanyOpen(true);
   };
-  const openCompanyDetail = (company: CompanyRecord) => {
+  function openCompanyDetail(company: CompanyRecord) {
     setCompanyDetail(company);
     setCompanyForm({
       id: company.id,
@@ -5467,7 +5467,7 @@ function Contacts({
             <header>
               <div>
                 <p>KONTAKTY</p>
-                <h2>Smazat „{contactToDelete.name}"</h2>
+                <h2>Smazat „{contactToDelete.name}“</h2>
               </div>
               <button type="button" onClick={() => setContactToDelete(null)}>×</button>
             </header>
@@ -6275,6 +6275,7 @@ function ImportHistory({ runs }: { runs: ImportRunRecord[] }) {
   );
 }
 function MonitorSettings({ note }: { note: (s: string) => void }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- volný tvar nastavení z /api/monitor-settings
   const [data, setData] = useState<any>(null),
     [saving, setSaving] = useState(false);
   const [blacklistPreview, setBlacklistPreview] = useState<{ matchedCompanies: string[]; affectedDemands: number } | null>(null);
@@ -6331,7 +6332,7 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
   const updateSchedule = (i: number, key: string, value: string | boolean) =>
     setData({
       ...data,
-      schedules: data.schedules.map((x: any, n: number) =>
+      schedules: data.schedules.map((x: Record<string, unknown>, n: number) =>
         n === i ? { ...x, [key]: value } : x,
       ),
     });
@@ -6417,7 +6418,7 @@ function MonitorSettings({ note }: { note: (s: string) => void }) {
         </label>
       </div>
       <h3>Plánované kontroly</h3>
-      {data.schedules.map((s: any, i: number) => (
+      {data.schedules.map((s: { name: string; enabled?: boolean; cron?: string }, i: number) => (
         <div className="schedule-row" key={s.name}>
           <input
             type="checkbox"

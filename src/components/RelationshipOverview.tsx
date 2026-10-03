@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ActivityRecord, CompanyRecord, DashboardOpportunity } from "@/lib/app-types";
 import styles from "./RelationshipOverview.module.css";
 
@@ -14,9 +15,10 @@ export function RelationshipOverview({ company, activities, opportunities, onCom
   onCompany?: () => void;
   onOpportunity: (id: string) => void;
 }) {
+  const [now] = useState(() => Date.now());
   const last = [...activities].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))[0];
   const active = opportunities.filter((item) => !["won", "lost"].includes(item.stage));
-  const overdue = Boolean(company?.nextStep && company.nextStepDueAt && Date.parse(company.nextStepDueAt) < Date.now());
+  const overdue = Boolean(company?.nextStep && company.nextStepDueAt && Date.parse(company.nextStepDueAt) < now);
   return (
     <section className={styles.overview} aria-label="Přehled vztahu">
       <div className={styles.heading}>

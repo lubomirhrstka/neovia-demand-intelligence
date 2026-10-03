@@ -1,3 +1,4 @@
+import { useState } from "react";
 "use client";
 
 import type { ActivityRecord, TaskRecord } from "@/lib/app-types";
@@ -40,6 +41,7 @@ export function CrmTimeline({
   onOpenEmail?: () => void;
   onOpenTask?: () => void;
 }) {
+  const [now] = useState(() => Date.now());
   const items: Item[] = [
     ...activities.map((a) => ({
       id: `a-${a.id}`,
@@ -60,7 +62,7 @@ export function CrmTimeline({
         title: t.title,
         meta: [t.status, t.opportunityTitle].filter(Boolean).join(" · "),
         at: due || Date.parse(t.syncedAt || "") || 0,
-        overdue: Boolean(due && due < Date.now() && t.status !== "done" && t.status !== "completed"),
+        overdue: Boolean(due && due < now && t.status !== "done" && t.status !== "completed"),
         onOpen: onOpenTask,
       };
     }),

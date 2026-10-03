@@ -196,7 +196,7 @@ export function Pool({ note }: { note: (s: string) => void }) {
             <header>
               <div>
                 <p>POOL KAPACIT</p>
-                <h2>Odstranit „{form.name}"</h2>
+                <h2>Odstranit „{form.name}“</h2>
               </div>
               <button type="button" onClick={() => setConfirmingDelete(false)}>×</button>
             </header>

@@ -67,7 +67,7 @@ async function lookupIcoByName(name: string) {
   const data = await response.json().catch(() => null);
   const rows = Array.isArray(data?.ekonomickeSubjekty) ? data.ekonomickeSubjekty : [];
   const best = rows
-    .map((row: any) => ({
+    .map((row: { ico?: string; obchodniJmeno?: string }) => ({
       ico: normalizeIco(row.ico),
       name: String(row.obchodniJmeno || ""),
       score: scoreAresMatch(name, String(row.obchodniJmeno || "")),
